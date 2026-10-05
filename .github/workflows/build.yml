@@ -12,8 +12,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Allow unprivileged ICMP (best-effort)
@@ -32,30 +32,133 @@ jobs:
         include:
           - { name: Windows, os: windows-latest, platform: "windows/amd64", artifact: "windows-amd64" }
           - { name: Linux, os: ubuntu-latest, platform: "linux/amd64", artifact: "linux-amd64" }
-          - { name: macOS, os: macos-latest, platform: "darwin/amd64,darwin/arm64", artifact: "darwin" }
+          - { name: macOS, os: macos-latest, platform: "darwin/amd64,darwin/arm64", artifact: "macos" }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Build with mygo
         run: go tool mygo build -platform "${{ matrix.platform }}"
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' mygo.json | head -n1)"
+          fi
+          if [[ -z "$VERSION" ]]; then
+            echo "could not determine version" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Packaging version v${VERSION}"
+          mkdir -p dist
+
+      - name: Package Windows
+        if: matrix.artifact == 'windows-amd64'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $stage = Join-Path $env:RUNNER_TEMP "hinatracer-win-stage"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item build\windows-amd64\HinaTracer.exe $stage
+          Copy-Item LICENSE, README.md $stage
+          $zip = Join-Path (Resolve-Path dist) "HinaTracer-v$env:VERSION-windows-amd64.zip"
+          if (Test-Path $zip) { Remove-Item -Force $zip }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
+          Remove-Item -Recurse -Force $stage
+          Get-ChildItem dist
+
+      - name: Package Linux
+        if: matrix.artifact == 'linux-amd64'
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          stage="$(mktemp -d)"
+          cp build/linux-amd64/hinatracer "$stage/"
+          cp build/linux-amd64/hinatracer.desktop "$stage/"
+          cp build/linux-amd64/hinatracer.png "$stage/"
+          cp LICENSE README.md "$stage/"
+          tar -C "$stage" -czf "dist/HinaTracer-v${VERSION}-linux-amd64.tar.gz" .
+          rm -rf "$stage"
+          deb="$(echo build/linux-amd64/hinatracer_*_amd64.deb)"
+          if [[ ! -f "$deb" ]]; then
+            echo "missing .deb from mygo build" >&2
+            exit 1
+          fi
+          cp "$deb" "dist/HinaTracer-v${VERSION}-linux-amd64.deb"
+          ls -la dist/
+
+      - name: Package macOS
+        if: matrix.artifact == 'macos'
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            app="build/darwin-${arch}/HinaTracer.app"
+            if [[ ! -d "$app" ]]; then
+              echo "missing $app" >&2
+              exit 1
+            fi
+            zip="dist/HinaTracer-v${VERSION}-macos-${arch}.zip"
+            ditto -c -k --keepParent "$app" "$zip"
+            zip -j "$zip" LICENSE README.md
+          done
+          ls -la dist/
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v5
         with:
           name: hinatracer-${{ matrix.artifact }}
-          path: build/
-      - name: Attach to release (tags only)
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create draft release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          cd release-assets
+          ls -la
+          find . -type f ! -name 'SHA256SUMS.txt' -print0 | while IFS= read -r -d '' f; do
+            base="$(basename "$f")"
+            if [[ "$f" != "./$base" ]]; then
+              mv -f "$f" "./$base"
+            fi
+          done
+          find . -type d -empty -delete || true
+          ls -la
+          sha256sum HinaTracer-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; uploading/clobbering assets"
+          else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --draft --verify-tag --title "$TAG" --generate-notes
           fi
-          # Upload packaged outputs under build/
-          find build -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.app' -o -name '*.tar.gz' -o -name '*.deb' -o -name 'HinaTracer' -o -name 'hinatracer' \) \
-            -print0 | xargs -0 -r gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            HinaTracer-* SHA256SUMS.txt

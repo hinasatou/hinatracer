@@ -16,7 +16,15 @@
 
 ## 下載
 
-預編譯包見 **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)**。
+預編譯包見 **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)**（先以草稿建立，需手動發佈）。標籤 `vX.Y.Z` 常見產物：
+
+| 檔案 | 內容 |
+|------|------|
+| `HinaTracer-vX.Y.Z-windows-amd64.zip` | `HinaTracer.exe`（GUI）、`LICENSE`、`README.md` |
+| `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | 二進位、`.desktop`、圖示、`LICENSE`、`README.md` |
+| `HinaTracer-vX.Y.Z-linux-amd64.deb` | mygo 產生的 deb |
+| `HinaTracer-vX.Y.Z-macos-arm64.zip` / `…-macos-amd64.zip` | `HinaTracer.app` 以及 `LICENSE`、`README.md` |
+| `SHA256SUMS.txt` | 上述檔案的 SHA-256 校驗和 |
 
 ## 平台
 
@@ -80,6 +88,8 @@ Windows 檔案圖示：倉庫已提交 `rsrc_windows_amd64.syso`，`go build` �
 | Linux | `~/.config/hinatracer/` |
 
 同目錄下的 `crash.log` 記錄介面/更新相關 panic，方便排查。
+
+GitHub Actions（`.github/workflows/build.yml`）在 `v*` 標籤上跑測試、用 mygo 建置 Windows / Linux / macOS，打包上述產物，並以**草稿** Release 附帶 `SHA256SUMS.txt`。
 
 ## 授權條款
 

@@ -16,7 +16,15 @@
 
 ## ダウンロード
 
-バイナリは **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)** で公開しています。
+バイナリは **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)** で公開します（下書き作成後、手動で Publish）。タグ `vX.Y.Z` の主な成果物：
+
+| ファイル | 内容 |
+|----------|------|
+| `HinaTracer-vX.Y.Z-windows-amd64.zip` | `HinaTracer.exe`（GUI）、`LICENSE`、`README.md` |
+| `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | バイナリ、`.desktop`、アイコン、`LICENSE`、`README.md` |
+| `HinaTracer-vX.Y.Z-linux-amd64.deb` | mygo が生成する deb |
+| `HinaTracer-vX.Y.Z-macos-arm64.zip` / `…-macos-amd64.zip` | `HinaTracer.app` と `LICENSE`、`README.md` |
+| `SHA256SUMS.txt` | 上記ファイルの SHA-256 チェックサム |
 
 ## プラットフォーム
 
@@ -80,6 +88,8 @@ Windows のファイルアイコン用 `rsrc_windows_amd64.syso` はリポジト
 | Linux | `~/.config/hinatracer/` |
 
 同じディレクトリの `crash.log` に UI/更新の panic を記録します。
+
+GitHub Actions（`.github/workflows/build.yml`）は `v*` タグでテスト実行・mygo による Windows / Linux / macOS ビルドを行い、上記アーカイブを **draft** Release に `SHA256SUMS.txt` 付きで添付します。
 
 ## ライセンス
 

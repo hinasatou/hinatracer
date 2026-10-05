@@ -16,7 +16,15 @@ Cross-platform native desktop network diagnostics: **Ping monitoring** and **Tra
 
 ## Download
 
-Pre-built binaries are published on **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)**.
+Pre-built binaries are published on **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)** (draft until published). Typical assets for tag `vX.Y.Z`:
+
+| Asset | Contents |
+|-------|----------|
+| `HinaTracer-vX.Y.Z-windows-amd64.zip` | `HinaTracer.exe` (GUI), `LICENSE`, `README.md` |
+| `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | binary, `.desktop`, icon, `LICENSE`, `README.md` |
+| `HinaTracer-vX.Y.Z-linux-amd64.deb` | Debian package from mygo |
+| `HinaTracer-vX.Y.Z-macos-arm64.zip` / `…-macos-amd64.zip` | `HinaTracer.app` plus `LICENSE`, `README.md` |
+| `SHA256SUMS.txt` | SHA-256 checksums of the files above |
 
 ## Platforms
 
@@ -98,7 +106,7 @@ go vet ./...
 
 Windows file icon: committed `rsrc_windows_amd64.syso` is linked automatically by `go build`. Regenerate with `go run scripts/mkicon.go -in <src.jpg>` then `bash scripts/genwinres.sh` (or `go generate`). `mygo build` also embeds `resources/icon.png` per `mygo.json`.
 
-GitHub Actions (`.github/workflows/build.yml`) builds on `v*` tags for Windows / Linux / macOS and attaches artifacts to the Release.
+GitHub Actions (`.github/workflows/build.yml`) runs tests, builds with mygo on Windows / Linux / macOS for `v*` tags, packages the archives above, and attaches them to a **draft** Release with `SHA256SUMS.txt`.
 
 ## Config & crash log
 
