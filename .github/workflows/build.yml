@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Allow unprivileged ICMP (best-effort)
+        run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647" || true
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: go vet ./...
+
+  build:
+    needs: test
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest, platform: "windows/amd64", artifact: "windows-amd64" }
+          - { name: Linux, os: ubuntu-latest, platform: "linux/amd64", artifact: "linux-amd64" }
+          - { name: macOS, os: macos-latest, platform: "darwin/amd64,darwin/arm64", artifact: "darwin" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build with mygo
+        run: go tool mygo build -platform "${{ matrix.platform }}"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hinatracer-${{ matrix.artifact }}
+          path: build/
+      - name: Attach to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --draft --verify-tag --title "$TAG" --generate-notes
+          fi
+          # Upload packaged outputs under build/
+          find build -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.app' -o -name '*.tar.gz' -o -name '*.deb' -o -name 'HinaTracer' -o -name 'hinatracer' \) \
+            -print0 | xargs -0 -r gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber
