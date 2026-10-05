@@ -17,6 +17,8 @@ import (
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
+
+	"hinatracer/internal/crashlog"
 )
 
 var errTTLExpired = errors.New("icmpx: TTL expired")
@@ -26,13 +28,18 @@ func IsTTLExpired(err error) bool {
 	return errors.Is(err, errTTLExpired)
 }
 
-func ping(host string, ttl int, timeout time.Duration) Result {
+func ping(host string, ttl int, timeout time.Duration) (r Result) {
+	defer func() {
+		if rec := crashlog.Recover("icmpx.ping"); rec != nil {
+			r = Result{Timeout: true, Err: fmt.Errorf("icmpx: panic: %v", rec)}
+		}
+	}()
 	ip, err := ResolveIP(host)
 	if err != nil {
 		return Result{Err: err, Timeout: true}
 	}
-	if r, ok := pingNative(ip, ttl, timeout); ok {
-		return r
+	if res, ok := pingNative(ip, ttl, timeout); ok {
+		return res
 	}
 	return pingShell(ip, ttl, timeout)
 }
@@ -44,6 +51,56 @@ func pingNative(ip net.IP, ttl int, timeout time.Duration) (Result, bool) {
 	return pingNative6(ip.To16(), ttl, timeout)
 }
 
+func setTTL4(c *icmp.PacketConn, ttl int) {
+	if ttl <= 0 {
+		return
+	}
+	if ttl > 255 {
+		ttl = 255
+	}
+	if p := c.IPv4PacketConn(); p != nil {
+		_ = p.SetTTL(ttl)
+	}
+}
+
+func setHopLimit6(c *icmp.PacketConn, ttl int) {
+	if ttl <= 0 {
+		return
+	}
+	if ttl > 255 {
+		ttl = 255
+	}
+	if p := c.IPv6PacketConn(); p != nil {
+		_ = p.SetHopLimit(ttl)
+	}
+}
+
+// icmpPayload returns the ICMP message bytes, stripping a leading IPv4 header
+// when present (some raw/Darwin paths deliver the IP header with the packet).
+// icmp.PacketConn.ReadFrom already strips on Darwin via ipv4.PacketConn, but
+// this keeps ParseMessage robust if a header is still present.
+func icmpPayload(b []byte, v4 bool) []byte {
+	if !v4 || len(b) < 20 {
+		return b
+	}
+	if b[0]>>4 != 4 {
+		return b
+	}
+	ihl := int(b[0]&0x0f) * 4
+	if ihl < 20 || ihl >= len(b) {
+		return b
+	}
+	// Only strip when the next bytes look like ICMP (type Echo / Echo Reply /
+	// Time Exceeded / Dest Unreach are common).
+	typ := b[ihl]
+	switch typ {
+	case 0, 3, 8, 11: // Echo Reply, Dest Unreach, Echo, Time Exceeded
+		return b[ihl:]
+	default:
+		return b
+	}
+}
+
 func pingNative4(ip net.IP, ttl int, timeout time.Duration) (Result, bool) {
 	c, network, err := listenICMP4()
 	if err != nil {
@@ -51,12 +108,7 @@ func pingNative4(ip net.IP, ttl int, timeout time.Duration) (Result, bool) {
 	}
 	defer c.Close()
 
-	if ttl > 0 {
-		if ttl > 255 {
-			ttl = 255
-		}
-		_ = ipv4.NewPacketConn(c).SetTTL(ttl)
-	}
+	setTTL4(c, ttl)
 
 	id, seq, payload := newEchoIDs()
 	wm := icmp.Message{
@@ -88,7 +140,7 @@ func pingNative4(ip net.IP, ttl int, timeout time.Duration) (Result, bool) {
 			return Result{Addr: ip, Timeout: true, Err: err}, true
 		}
 		rtt := time.Since(start)
-		msg, err := icmp.ParseMessage(ianaProtocolICMP, buf[:n])
+		msg, err := icmp.ParseMessage(ianaProtocolICMP, icmpPayload(buf[:n], true))
 		if err != nil {
 			continue
 		}
@@ -115,12 +167,7 @@ func pingNative6(ip net.IP, ttl int, timeout time.Duration) (Result, bool) {
 	}
 	defer c.Close()
 
-	if ttl > 0 {
-		if ttl > 255 {
-			ttl = 255
-		}
-		_ = ipv6.NewPacketConn(c).SetHopLimit(ttl)
-	}
+	setHopLimit6(c, ttl)
 
 	id, seq, payload := newEchoIDs()
 	wm := icmp.Message{
@@ -256,13 +303,10 @@ func isDGRAM(network string) bool {
 	return network == "udp4" || network == "udp6"
 }
 
-// timeExceededMatch checks whether an ICMP Time Exceeded body embeds our echo.
-// Exported helpers used by tests live in match.go.
 func timeExceededMatch(body icmp.MessageBody, id, seq int, payload []byte, v4 bool, network string) bool {
 	return MatchTimeExceeded(body, id, seq, payload, v4, isDGRAM(network))
 }
 
-// pingShell is the last-resort fallback using the system ping binary.
 func pingShell(ip net.IP, ttl int, timeout time.Duration) Result {
 	ms := int(timeout / time.Millisecond)
 	if ms <= 0 {

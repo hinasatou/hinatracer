@@ -2,10 +2,12 @@ package trace
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"time"
 
+	"hinatracer/internal/crashlog"
 	"hinatracer/internal/icmpx"
 	"hinatracer/internal/pinger"
 )
@@ -163,6 +165,11 @@ func (s *Session) fireUpdate() {
 
 func (s *Session) run(ctx context.Context, host string, opt SessionOptions) {
 	defer func() {
+		if rec := crashlog.Recover("trace.session.run"); rec != nil {
+			s.mu.Lock()
+			s.err = errPanic(rec)
+			s.mu.Unlock()
+		}
 		s.mu.Lock()
 		s.running = false
 		s.cancel = nil
@@ -223,6 +230,15 @@ func (s *Session) run(ctx context.Context, host string, opt SessionOptions) {
 			wg.Add(1)
 			go func(ttl int) {
 				defer wg.Done()
+				defer func() {
+					if rec := crashlog.Recover("trace.session.mtr"); rec != nil {
+						s.mu.Lock()
+						if s.err == nil {
+							s.err = errPanic(rec)
+						}
+						s.mu.Unlock()
+					}
+				}()
 				s.probeTTL(ctx, destCopy, ttl, opt.Timeout)
 			}(ttl)
 		}
@@ -261,6 +277,8 @@ func (s *Session) probeTTL(ctx context.Context, dest net.IP, ttl int, timeout ti
 	if ctx.Err() != nil {
 		return
 	}
+	// icmpx.Ping recovers its own panics into Result.Err; do not recover here
+	// while s.mu may be held below (would deadlock).
 	res := icmpx.Ping(dest.String(), ttl, timeout)
 	now := time.Now()
 
@@ -287,4 +305,8 @@ func (s *Session) probeTTL(ctx context.Context, dest net.IP, ttl int, timeout ti
 	if !h.timeout && h.addr != nil && dest != nil && h.addr.Equal(dest) {
 		h.reached = true
 	}
+}
+
+func errPanic(rec any) error {
+	return fmt.Errorf("trace: panic: %v", rec)
 }

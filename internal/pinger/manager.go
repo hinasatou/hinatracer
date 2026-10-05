@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"hinatracer/internal/crashlog"
 	"hinatracer/internal/icmpx"
 )
 
@@ -265,6 +266,19 @@ func (m *Manager) pingAll() {
 		wg.Add(1)
 		go func(t *Target) {
 			defer wg.Done()
+			defer func() {
+				if rec := crashlog.Recover("pinger.ping"); rec != nil {
+					now := time.Now()
+					m.mu.Lock()
+					defer m.mu.Unlock()
+					for _, cur := range m.targets {
+						if cur.ID == t.ID {
+							cur.Stats.AddFailure(now)
+							return
+						}
+					}
+				}
+			}()
 			res := icmpx.Ping(t.Host, 0, timeout)
 			now := time.Now()
 			m.mu.Lock()

@@ -65,3 +65,34 @@ func TestStatsReuse(t *testing.T) {
 		t.Fatalf("%#v", st)
 	}
 }
+
+func TestTraceLoopbackOneHop(t *testing.T) {
+	s := NewSession()
+	done := make(chan struct{})
+	s.SetOnUpdate(func() {
+		select {
+		case done <- struct{}{}:
+		default:
+		}
+	})
+	s.Start("127.0.0.1", SessionOptions{
+		MaxHops:  3,
+		Timeout:  time.Second,
+		MTR:      false,
+		Interval: time.Second,
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for s.Running() && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if s.Running() {
+		s.Stop()
+		t.Fatal("session still running")
+	}
+	// If ICMP unavailable, we still must not panic; hops may be empty/timeouts.
+	snaps := s.Snapshots()
+	t.Logf("hops=%d err=%v", len(snaps), s.Err())
+	for _, h := range snaps {
+		t.Logf("ttl=%d addr=%s reached=%v timeout=%v success=%d", h.TTL, h.Addr, h.Reached, h.Timeout, h.Stats.Success)
+	}
+}
