@@ -4,15 +4,16 @@ English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-HK.md) | [�
 
 <img src="resources/icon.png" width="64" height="64" alt="HinaTracer icon" />
 
-Cross-platform native desktop network diagnostics: **Ping monitoring** and **Traceroute** (MTR), built with [mygo](https://github.com/egoist/mygo) v0.2.9. Annotates hops/hosts with **qqwry.ipdb** (IPIP format), Loyalsoldier GeoIP region flags (embedded flagcdn PNGs, emoji fallback), and **iptoasn ASN** (number, org, registry region). Supports **IPv4 / IPv6**.
+Cross-platform native desktop network diagnostics: **Ping monitoring**, **Traceroute** (MTR), and **IP Lookup**, built with [mygo](https://github.com/egoist/mygo) v0.2.9. Annotates hops/hosts with **qqwry.ipdb** (IPIP format), Loyalsoldier GeoIP region flags (embedded flagcdn PNGs, emoji fallback), and **iptoasn ASN** (number, org, registry region). Supports **IPv4 / IPv6**.
 
 ## Features
 
 1. **Ping Monitor** (default page) — Periodic ICMP probes with success/failure counts, success rate, latency last/avg/min/max/median, and timestamps. Columns: alias, host, rDNS, location, region, ASN. Batch import (`host` or `host,alias` per line), enable/disable per target, context menu (copy, alias, enable/disable, details, traceroute, delete). Double-click a row for details.
 2. **Traceroute** — Chrome-style vertical tabs on the left (status dot, title, close, context menu, resizable strip). Default **MTR**: discover the path, then probe each hop on an interval; can switch to one-shot traceroute. Multi-tab concurrent traces (host/alias/MTR/interval/order/active tab persisted). **Start all / Stop all** for every tab. Hop table aligns with Ping stats columns. Right-click a hop to copy, open hop details, or add the IP to Ping.
-3. **Settings** — Language (简体 / 香港繁體 / 日本語 / English + user packs), theme (light / dark / system), data file paths, auto-start Ping / Trace on launch.
-4. **About** — App name, version, GitHub link.
-5. **Config & crash log** — See [Config & crash log](#config--crash-log).
+3. **IP Lookup** — Enter an IP (v4/v6) or domain (batch: one per line). Domains resolve all A/AAAA asynchronously; each IP shows rDNS, location (qqwry.ipdb), region + flag (GeoIP), ASN + ASN region. Context menu: copy, add IP/domain to Ping, open Traceroute.
+4. **Settings** — Language (简体中文 / 繁體中文 / 日本語 / English + user packs), theme (light / dark / system), data file paths, **one-click download/update** of all three data files (atomic replace + hot-reload), auto-start Ping / Trace on launch.
+5. **About** — App name, version, GitHub link.
+6. **Config & crash log** — See [Config & crash log](#config--crash-log).
 
 ## Download
 
@@ -52,17 +53,17 @@ Unsigned builds may be blocked on first open: allow under **System Settings → 
 
 ## Data files
 
-Set paths in **Settings**. Missing files show “—” for location / region / ASN.
+Set paths in **Settings**, or use **Download / update all** to fetch them automatically (overwrites a configured path, otherwise saves under the config directory and fills the path). Missing files show “—” for location / region / ASN. Downloads follow redirects, use `http.ProxyFromEnvironment` (on Windows, Go reads proxy from env vars only), write to a temp file, validate, then atomically replace.
 
-| Data | Source | Notes |
+| Data | Source | Direct URL used by the app |
 |------|--------|--------|
-| **qqwry.ipdb** | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) | IPIP-format DB (IPv4/IPv6). CDN: `https://cdn.bili33.top/gh/nmgliangwei/qqwry.ipdb@main/qqwry.ipdb` |
-| **Country.mmdb** | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip/releases) | MaxMind Country DB for region flags. CDN: `https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/Country.mmdb` |
-| **ip2asn-combined.tsv.gz** | [iptoasn.com](https://iptoasn.com/data/ip2asn-combined.tsv.gz) | ASN number, org, registry region (IPv4+IPv6). **`.gz` works directly**; plain `.tsv` also fine |
+| **qqwry.ipdb** | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) | `https://cdn.jsdelivr.net/npm/qqwry.ipdb/qqwry.ipdb` |
+| **Country.mmdb** | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip/releases) | `https://github.com/Loyalsoldier/geoip/releases/latest/download/Country.mmdb` |
+| **ip2asn-combined.tsv.gz** | [iptoasn.com](https://iptoasn.com/data/ip2asn-combined.tsv.gz) | `https://iptoasn.com/data/ip2asn-combined.tsv.gz` |
 
 ## Language packs
 
-Built-in: Simplified Chinese, Hong Kong Traditional Chinese, Japanese, English. Switch in Settings (applies immediately).
+Built-in: Simplified Chinese, Traditional Chinese, Japanese, English. Switch in Settings (applies immediately).
 
 On first run (no `language` in config), the app detects the OS UI language and picks the best matching pack, then saves it.
 

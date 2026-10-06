@@ -81,7 +81,7 @@ func TestCloseTraceTabWhileRunning(t *testing.T) {
 	t2 := a.addTraceTabEmpty()
 	t2.Host = "running-tab"
 	a.traceActive = 1
-	t2.Running = true
+	t2.setRunning(true)
 	tt := ui.NewTester(a.view, 1240, 760)
 	r, ok := tt.Find("running-tab")
 	if !ok {

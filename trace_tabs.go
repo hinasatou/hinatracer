@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -21,7 +22,7 @@ type traceTab struct {
 	Alias    string
 	MTR      bool
 	Interval float64
-	Running  bool
+	running atomic.Bool
 	Status   string
 	mu       sync.Mutex // guards Hops for session/UI cross-thread access
 	Hops     []traceHopView
@@ -39,6 +40,21 @@ func (t *traceTab) title() string {
 		return h
 	}
 	return i18n.T("trace.tab.new")
+}
+
+
+func (t *traceTab) isRunning() bool {
+	if t == nil {
+		return false
+	}
+	return t.running.Load()
+}
+
+func (t *traceTab) setRunning(v bool) {
+	if t == nil {
+		return
+	}
+	t.running.Store(v)
 }
 
 func (a *app) initTraceTabs() {
@@ -96,7 +112,7 @@ func (a *app) activeTrace() *traceTab {
 
 func (a *app) anyTraceRunning() bool {
 	for _, t := range a.traceTabs {
-		if t.Running {
+		if t.isRunning() {
 			return true
 		}
 	}
@@ -202,7 +218,7 @@ func (a *app) stopTraceTab(tab *traceTab) {
 	if tab.session != nil {
 		tab.session.Stop()
 	}
-	tab.Running = false
+	tab.setRunning(false)
 }
 
 func (a *app) stopAllTraces() {
@@ -216,7 +232,7 @@ func (a *app) startTraceTab(tab *traceTab) {
 		return
 	}
 	host := strings.TrimSpace(tab.Host)
-	if host == "" || tab.Running {
+	if host == "" || tab.isRunning() {
 		return
 	}
 	a.stopTraceTab(tab)
@@ -228,7 +244,7 @@ func (a *app) startTraceTab(tab *traceTab) {
 	}
 	sess := trace.NewSession()
 	tab.session = sess
-	tab.Running = true
+	tab.setRunning(true)
 	tab.Hops = nil
 	tab.Selected = -1
 	tab.Status = i18n.Tf("trace.status.running", host)
@@ -313,7 +329,7 @@ func (a *app) applySessionToTab(tab *traceTab) {
 		tab.mu.Lock()
 		tab.Hops = hops
 		tab.mu.Unlock()
-		tab.Running = running
+		tab.setRunning(running)
 		if !running {
 			if err != nil {
 				tab.Status = i18n.Tf("trace.status.fail", err.Error())
@@ -384,7 +400,7 @@ func (a *app) stopTrace() {
 	tab := a.activeTrace()
 	if tab != nil {
 		tab.Status = i18n.T("trace.status.canceled")
-		tab.Running = false
+		tab.setRunning(false)
 	}
 }
 
@@ -401,7 +417,7 @@ func (a *app) jumpToTrace(host string) {
 	if idx, ok := a.findTraceTabByHost(host); ok {
 		a.traceActive = idx
 		tab := a.traceTabs[idx]
-		if !tab.Running {
+		if !tab.isRunning() {
 			a.startTraceTab(tab)
 		}
 		a.persist()
@@ -477,7 +493,7 @@ func (a *app) openHopDetail(h traceHopView) {
 // traceTabsCanStartAll reports whether any stopped tab has a non-empty host.
 func traceTabsCanStartAll(tabs []*traceTab) bool {
 	for _, t := range tabs {
-		if t != nil && !t.Running && strings.TrimSpace(t.Host) != "" {
+		if t != nil && !t.isRunning() && strings.TrimSpace(t.Host) != "" {
 			return true
 		}
 	}
@@ -487,7 +503,7 @@ func traceTabsCanStartAll(tabs []*traceTab) bool {
 // traceTabsCanStopAll reports whether any tab is running.
 func traceTabsCanStopAll(tabs []*traceTab) bool {
 	for _, t := range tabs {
-		if t != nil && t.Running {
+		if t != nil && t.isRunning() {
 			return true
 		}
 	}
@@ -496,7 +512,7 @@ func traceTabsCanStopAll(tabs []*traceTab) bool {
 
 func (a *app) startAllTraces() {
 	for _, t := range a.traceTabs {
-		if t != nil && !t.Running && strings.TrimSpace(t.Host) != "" {
+		if t != nil && !t.isRunning() && strings.TrimSpace(t.Host) != "" {
 			a.startTraceTab(t)
 		}
 	}
@@ -507,7 +523,7 @@ func (a *app) stopAllTraceTabs() {
 		if t == nil {
 			continue
 		}
-		if t.Running {
+		if t.isRunning() {
 			a.stopTraceTab(t)
 			t.Status = i18n.T("trace.status.canceled")
 		}

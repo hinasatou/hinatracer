@@ -4,15 +4,16 @@
 
 <img src="resources/icon.png" width="64" height="64" alt="HinaTracer 图标" />
 
-跨平台原生桌面网络诊断工具：**Ping 监测**与**路由追踪**（MTR），基于 [mygo](https://github.com/egoist/mygo) v0.2.9。结合 **qqwry.ipdb**（ipip 格式）、Loyalsoldier GeoIP 地区旗帜（内嵌 flagcdn PNG，emoji 回退）与 **iptoasn ASN**（编号、组织、注册地区）标注跳点/主机。支持 **IPv4 / IPv6**。
+跨平台原生桌面网络诊断工具：**Ping 监测**、**路由追踪**（MTR）与 **IP 查询**，基于 [mygo](https://github.com/egoist/mygo) v0.2.9。结合 **qqwry.ipdb**（ipip 格式）、Loyalsoldier GeoIP 地区旗帜（内嵌 flagcdn PNG，emoji 回退）与 **iptoasn ASN**（编号、组织、注册地区）标注跳点/主机。支持 **IPv4 / IPv6**。
 
 ## 功能
 
 1. **Ping 监测**（默认页）— 按间隔持续探测；统计成功/失败、成功率、延迟分位数与时间戳。表格含别名、主机、rDNS、位置、地区、ASN。支持批量导入（每行 `host` 或 `host,alias`）、单目标启用/禁用；右键复制/改别名/启用禁用/详情/查 traceroute/删除；双击打开详情。
 2. **路由追踪** — 左侧 Chrome 风格垂直页签（状态点、标题、关闭、右键菜单、可调宽度）。默认 **MTR**：发现路径后按间隔持续探测每一跳；可改为单次 traceroute。多页签并发。支持**全部开始 / 全部停止**。跳点表列与 Ping 对齐。右键可复制、查看跳点详情、将 IP 添加到 Ping。
-3. **设置** — 语言（简体/香港繁体/日本語/English，可加载自定义包）、主题、数据文件路径、启动时自动监测。
-4. **关于** — 应用名、版本与 GitHub 链接。
-5. **配置与崩溃日志** — 见下文。
+3. **IP 查询** — 输入 IP（v4/v6）或域名（可批量，每行一条）。域名异步解析全部 A/AAAA；每个 IP 显示 rDNS、位置（qqwry.ipdb）、地区+旗帜（GeoIP）、ASN 与 ASN 地区。右键可复制、添加 IP/域名到 Ping、打开 Traceroute。
+4. **设置** — 语言（简体中文/繁体中文/日本語/English，可加载自定义包）、主题、数据文件路径、**一键下载/更新**三份数据文件（原子替换并热加载）、启动时自动监测。
+5. **关于** — 应用名、版本与 GitHub 链接。
+6. **配置与崩溃日志** — 见下文。
 
 ## 下载
 
@@ -57,7 +58,7 @@ sudo setcap cap_net_raw+ep /path/to/hinatracer
 
 ## 语言包
 
-内置：简体中文、香港繁体、日本語、English。设置中切换立即生效。
+内置：简体中文、繁体中文、日本語、English。设置中切换立即生效。
 
 首次运行（配置中无 `language` 字段）会按操作系统界面语言自动匹配语言包并写入配置。
 

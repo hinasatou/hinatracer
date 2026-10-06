@@ -11,10 +11,11 @@ import (
 
 func TestTraceTabsCanStartStopAll(t *testing.T) {
 	tabs := []*traceTab{
-		{Host: "1.1.1.1", Running: false},
-		{Host: "", Running: false},
-		{Host: "8.8.8.8", Running: true},
+		{Host: "1.1.1.1"},
+		{Host: ""},
+		{Host: "8.8.8.8"},
 	}
+	tabs[2].setRunning(true)
 	if !traceTabsCanStartAll(tabs) {
 		t.Fatal("expected can start (stopped host present)")
 	}
@@ -22,7 +23,7 @@ func TestTraceTabsCanStartStopAll(t *testing.T) {
 		t.Fatal("expected can stop")
 	}
 	for _, t0 := range tabs {
-		t0.Running = true
+		t0.setRunning(true)
 	}
 	if traceTabsCanStartAll(tabs) {
 		t.Fatal("all running: cannot start all")
@@ -31,7 +32,7 @@ func TestTraceTabsCanStartStopAll(t *testing.T) {
 		t.Fatal("expected can stop")
 	}
 	for _, t0 := range tabs {
-		t0.Running = false
+		t0.setRunning(false)
 		t0.Host = ""
 	}
 	if traceTabsCanStartAll(tabs) {
@@ -48,13 +49,13 @@ func TestStopAllTraceTabsClearsRunning(t *testing.T) {
 	a.nextTraceID = 1
 	t1 := a.addTraceTabEmpty()
 	t1.Host = "127.0.0.1"
-	t1.Running = true
+	t1.setRunning(true)
 	t2 := a.addTraceTabEmpty()
 	t2.Host = ""
-	t2.Running = false
+	t2.setRunning(false)
 	t3 := a.addTraceTabEmpty()
 	t3.Host = "8.8.8.8"
-	t3.Running = true
+	t3.setRunning(true)
 
 	if !traceTabsCanStopAll(a.traceTabs) {
 		t.Fatal("should be able to stop")
@@ -65,7 +66,7 @@ func TestStopAllTraceTabsClearsRunning(t *testing.T) {
 	}
 
 	a.stopAllTraceTabs()
-	if t1.Running || t3.Running {
+	if t1.isRunning() || t3.isRunning() {
 		t.Fatal("expected all stopped")
 	}
 	if t1.Status != i18n.T("trace.status.canceled") {

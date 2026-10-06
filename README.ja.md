@@ -4,15 +4,16 @@
 
 <img src="resources/icon.png" width="64" height="64" alt="HinaTracer アイコン" />
 
-クロスプラットフォームのネイティブ UI ネットワーク診断ツール：**Ping 監視**と**Traceroute**（MTR）。[mygo](https://github.com/egoist/mygo) v0.2.9 製。**qqwry.ipdb**（IPIP 形式）、Loyalsoldier GeoIP の地域フラグ（埋め込み flagcdn PNG、絵文字フォールバック）、**iptoasn ASN**（番号・組織・登録地域）でホップ/ホストを注釈。**IPv4 / IPv6** 対応。
+クロスプラットフォームのネイティブ UI ネットワーク診断ツール：**Ping 監視**、**Traceroute**（MTR）、**IP 検索**。[mygo](https://github.com/egoist/mygo) v0.2.9 製。**qqwry.ipdb**（IPIP 形式）、Loyalsoldier GeoIP の地域フラグ（埋め込み flagcdn PNG、絵文字フォールバック）、**iptoasn ASN**（番号・組織・登録地域）でホップ/ホストを注釈。**IPv4 / IPv6** 対応。
 
 ## 機能
 
 1. **Ping 監視**（デフォルト）— 間隔付き ICMP。成功/失敗、成功率、遅延の last/avg/min/max/median、タイムスタンプ。別名・ホスト・rDNS・位置・地域・ASN。一括インポート（行ごと `host` または `host,alias`）、有効/無効、コンテキストメニュー、ダブルクリックで詳細。
 2. **Traceroute** — 左の Chrome 風縦タブ（状態ドット、タイトル、閉じる、右クリック、幅変更）。デフォルト **MTR**。複数タブ同時実行。**すべて開始 / すべて停止**対応。ホップ表は Ping と同様の統計列。右クリックでコピー、ホップ詳細、Ping への追加。
-3. **設定** — 言語（簡体/香港繁体/日本語/English＋カスタム）、テーマ、データファイルパス、起動時自動開始。
-4. **About** — アプリ名・バージョン・GitHub。
-5. **設定とクラッシュログ** — 下記参照。
+3. **IP 検索** — IP（v4/v6）またはドメイン（複数行可）。A/AAAA を非同期解決し、位置・地域旗・ASN を表示。右クリックで Ping / Traceroute へ追加。
+4. **設定** — 言語（簡体中国語/繁体字中国語/日本語/English＋カスタム）、テーマ、データファイルパス、**一括ダウンロード/更新**、起動時自動開始。
+5. **About** — アプリ名・バージョン・GitHub。
+6. **設定とクラッシュログ** — 下記参照。
 
 ## ダウンロード
 
@@ -57,7 +58,7 @@ sudo setcap cap_net_raw+ep /path/to/hinatracer
 
 ## 言語パック
 
-組み込み：簡体中国語、香港繁体、日本語、English。設定ですぐ切替。
+組み込み：簡体中国語、繁体字中国語、日本語、English。設定ですぐ切替。
 
 初回起動（設定に `language` がない場合）は OS の UI 言語を検出し、最適なパックを選んで保存します。
 

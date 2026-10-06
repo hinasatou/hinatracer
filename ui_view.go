@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	appVersion    = "0.6.2"
+	appVersion    = "0.6.3"
 	appRepoURL    = "https://github.com/hinasatou/hinatracer"
 	contentMinH   = float32(200)
 	pageTableMinH = float32(280)
@@ -30,6 +30,8 @@ func (a *app) view(c *ui.Context) {
 				switch a.nav {
 				case "ping":
 					a.viewPing(c)
+				case "iplookup":
+					a.viewIPLookup(c)
 				case "settings":
 					a.viewSettings(c)
 				case "about":
@@ -58,6 +60,7 @@ func (a *app) viewSidebar(c *ui.Context) {
 			ui.SidebarSection(c, i18n.T("nav.section.features"), nil, func() {
 				ui.SidebarItem(c, "ping", nil, i18n.T("nav.ping"))
 				ui.SidebarItem(c, "trace", nil, i18n.T("nav.trace"))
+				ui.SidebarItem(c, "iplookup", nil, i18n.T("nav.iplookup"))
 				ui.SidebarItem(c, "settings", nil, i18n.T("nav.settings"))
 				ui.SidebarItem(c, "about", nil, i18n.T("nav.about"))
 			})
@@ -72,6 +75,8 @@ func (a *app) viewTopBar(c *ui.Context) {
 	switch a.nav {
 	case "ping":
 		title, sub = i18n.T("top.ping.title"), i18n.T("top.ping.sub")
+	case "iplookup":
+		title, sub = i18n.T("top.lookup.title"), i18n.T("top.lookup.sub")
 	case "settings":
 		title, sub = i18n.T("top.settings.title"), i18n.T("top.settings.sub")
 	case "about":
@@ -200,7 +205,7 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 					}
 					row.Children(func() {
 						dotColor := t.TextMuted
-						if ti.Running {
+						if ti.isRunning() {
 							dotColor = t.Success
 						}
 						ui.Box(c).Size(8, 8).Radius(4).Background(dotColor).Shrink(0)
@@ -240,7 +245,7 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 							pendingCtx.idx = idx
 						}
 						m.Separator()
-						if ti.Running {
+						if ti.isRunning() {
 							if m.Item(i18n.T("trace.tab.ctx.stop")).Chosen() {
 								pendingCtx.stop = true
 								pendingCtx.idx = idx
@@ -299,7 +304,7 @@ func (a *app) viewTraceContent(c *ui.Context) {
 			if ui.TextInput(c, &tab.Alias).Placeholder(i18n.T("trace.alias_ph")).Label(i18n.T("trace.alias")).Width(140).Changed() {
 				a.persist()
 			}
-			if tab.Running {
+			if tab.isRunning() {
 				if ui.Button(c, i18n.T("trace.stop")).Clicked() {
 					a.stopTrace()
 				}
@@ -325,7 +330,7 @@ func (a *app) viewTraceContent(c *ui.Context) {
 				}
 				ui.Text(c, i18n.T("ping.seconds")).FontSize(12).TextColor(t.TextMuted)
 			})
-			if ui.Button(c, i18n.T("trace.reset")).Disabled(tab.Running).Clicked() {
+			if ui.Button(c, i18n.T("trace.reset")).Disabled(tab.isRunning()).Clicked() {
 				tab.Hops = nil
 				tab.Status = ""
 				tab.Selected = -1
@@ -340,7 +345,7 @@ func (a *app) viewTraceContent(c *ui.Context) {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, i18n.T("trace.hops")).FontSize(14).Bold()
 			ui.Spacer(c)
-			if tab.Running {
+			if tab.isRunning() {
 				ui.Spinner(c)
 			}
 		})
@@ -1229,6 +1234,43 @@ func (a *app) viewSettings(c *ui.Context) {
 				ui.Checkbox(c, &a.cfg.AutoStartTrace, i18n.T("settings.autostart_trace"))
 				if ui.Button(c, i18n.T("settings.save_startup")).Clicked() {
 					a.persist()
+				}
+			})
+
+			card(c, func() {
+				ui.Text(c, i18n.T("settings.dl_all.title")).FontSize(14).Bold()
+				ui.Text(c, i18n.T("settings.dl_all.desc")).FontSize(12).TextColor(t.TextMuted)
+				running := a.dataDL != nil && a.dataDL.Running()
+				ui.Row(c).Gap(10).Wrap().Children(func() {
+					btn := ui.PrimaryButton(c, i18n.T("settings.dl_all.start"))
+					if running {
+						btn.Disabled(true)
+					}
+					if btn.Clicked() && !running {
+						a.startDataDownload()
+					}
+					cbtn := ui.Button(c, i18n.T("settings.dl_all.cancel"))
+					if !running {
+						cbtn.Disabled(true)
+					}
+					if cbtn.Clicked() && running {
+						a.dataDL.Cancel()
+					}
+				})
+				if a.dataDL != nil {
+					for _, p := range a.dataDL.Snapshot() {
+						line := formatDataDLProgress(p)
+						col := t.TextMuted
+						if p.State == "error" {
+							col = t.Danger
+						} else if p.State == "ok" {
+							col = t.Success
+						}
+						ui.Text(c, line).FontSize(12).TextColor(col)
+					}
+				}
+				if a.dataDLStatus != "" {
+					ui.Text(c, a.dataDLStatus).FontSize(12).TextColor(t.TextMuted)
 				}
 			})
 

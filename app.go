@@ -14,6 +14,7 @@ import (
 
 	"hinatracer/i18n"
 	"hinatracer/internal/asn"
+	"hinatracer/internal/datadl"
 	"hinatracer/internal/config"
 	"hinatracer/internal/flagx"
 	"hinatracer/internal/geoip"
@@ -35,7 +36,21 @@ type app struct {
 
 	dbsLoading bool
 
-	nav string // "trace" | "ping" | "settings" | "about"
+	nav string // "trace" | "ping" | "iplookup" | "settings" | "about"
+
+	// IP lookup page
+	lookupInput    string
+	lookupRows     []lookupRow
+	lookupMu       sync.Mutex
+	lookupSelected int
+	lookupTable    ui.ListState
+	lookupSort     ui.SortOrder
+	lookupStatus   string
+	nextLookupID   int
+
+	// one-click data download
+	dataDL       *datadl.Manager
+	dataDLStatus string
 
 	// traceroute tabs
 	traceTabs      []*traceTab
@@ -203,6 +218,9 @@ func newApp() *app {
 	a.pingSort = ui.SortOrder{Column: "#"}
 	a.pingTable.Sort = &a.pingSort
 	a.initTraceTabs()
+	a.initIPLookup()
+	a.dataDL = datadl.NewManager()
+	a.dataDL.SetOnUpdate(func() { a.requestUIUpdate() })
 
 	a.pingMgr = pinger.NewManager(time.Duration(a.pingInterval * float64(time.Second)))
 	for _, t := range cfg.PingTargets {

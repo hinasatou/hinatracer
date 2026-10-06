@@ -56,6 +56,14 @@ func TestViewSmoke(t *testing.T) {
 	if !tt.HasText(i18n.T("ping.import")) {
 		t.Fatalf("missing import: %q", tt.Texts())
 	}
+	a.nav = "iplookup"
+	tt = ui.NewTester(a.view, 1240, 760)
+	if !tt.HasText(i18n.T("nav.iplookup")) && !tt.HasText(i18n.T("top.lookup.title")) {
+		t.Fatalf("missing iplookup: %q", tt.Texts())
+	}
+	if !tt.HasText(i18n.T("lookup.query")) {
+		t.Fatalf("missing lookup query button: %q", tt.Texts())
+	}
 	a.nav = "settings"
 	tt = ui.NewTester(a.view, 1240, 760)
 	if !tt.HasText(i18n.T("settings.data")) {
@@ -69,6 +77,9 @@ func TestViewSmoke(t *testing.T) {
 	}
 	if !tt.HasText(i18n.T("settings.appearance")) {
 		t.Fatalf("missing appearance: %q", tt.Texts())
+	}
+	if !tt.HasText(i18n.T("settings.dl_all.title")) && !tt.HasText(i18n.T("settings.dl_all.start")) {
+		t.Fatalf("missing data download: %q", tt.Texts())
 	}
 	a.nav = "about"
 	tt = ui.NewTester(a.view, 1240, 760)
@@ -203,8 +214,8 @@ func TestAppVersionConst(t *testing.T) {
 	if strings.Contains(appVersion, "4") {
 		t.Fatalf("appVersion must not contain digit 4: %q", appVersion)
 	}
-	if appVersion != "0.6.2" {
-		t.Fatalf("expected 0.6.2 got %q", appVersion)
+	if appVersion != "0.6.3" {
+		t.Fatalf("expected 0.6.3 got %q", appVersion)
 	}
 	if appRepoURL != "https://github.com/hinasatou/hinatracer" {
 		t.Fatalf("unexpected repo %q", appRepoURL)
@@ -341,6 +352,14 @@ func TestTraceTabDedupeJump(t *testing.T) {
 	if len(a.traceTabs) != 2 {
 		t.Fatalf("dedupe again failed: %d", len(a.traceTabs))
 	}
+	// Detach callbacks before stop so session goroutines cannot race tab writes.
+	for _, tab := range a.traceTabs {
+		if tab.session != nil {
+			tab.session.SetOnUpdate(nil)
+			tab.session.Stop()
+		}
+		tab.setRunning(false)
+	}
 }
 
 func TestRestoredTabsStartStopped(t *testing.T) {
@@ -367,7 +386,7 @@ func TestRestoredTabsStartStopped(t *testing.T) {
 	if len(a.traceTabs) != 1 {
 		t.Fatalf("tabs=%d", len(a.traceTabs))
 	}
-	if a.traceTabs[0].Running {
+	if a.traceTabs[0].isRunning() {
 		t.Fatal("restored tab should start stopped")
 	}
 	if a.traceTabs[0].Host != "1.1.1.1" {
