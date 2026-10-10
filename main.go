@@ -19,7 +19,19 @@ func main() {
 	mygo.App.SetVersion(appVersion)
 
 	ensureConfigDir()
+	cleanupAfterUpdate()
 	a := newApp()
+	updQuit = func(a *app) {
+		if a.win == nil {
+			return
+		}
+		a.win.Update(func() {
+			a.pingMgr.Stop()
+			a.stopAllTraces()
+			a.flushLayouts()
+			mygo.App.Quit()
+		})
+	}
 
 	mygoShellOpen = func(url string) {
 		_ = mygo.Shell.OpenExternal(url)
@@ -29,8 +41,8 @@ func main() {
 		applyThemeSource(a.cfg.Theme)
 		w := mygo.NewWindow(mygo.WindowOptions{
 			Title:     "HinaTracer",
-			Width:     1240,
-			Height:    760,
+			Width:     mainWinW,
+			Height:    mainWinH,
 			MinWidth:  960,
 			MinHeight: 560,
 			StateKey:  "main",
@@ -46,6 +58,7 @@ func main() {
 		mygo.App.OnWindowAllClosed(func() {
 			a.pingMgr.Stop()
 			a.stopAllTraces()
+			a.flushLayouts()
 			mygo.App.Quit()
 		})
 	}

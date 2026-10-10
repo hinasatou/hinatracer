@@ -63,3 +63,22 @@ func TestParseInputBatch(t *testing.T) {
 		t.Fatalf("%#v", qs)
 	}
 }
+
+func TestClassifyPorts(t *testing.T) {
+	q := ClassifyLine("1.2.3.5:443")
+	if q.Kind != KindIP || q.Port != 443 || q.DisplayIP() != "1.2.3.5" {
+		t.Fatalf("%+v", q)
+	}
+	q = ClassifyLine("[2001:db8::1]:8080")
+	if q.Kind != KindIP || q.Port != 8080 {
+		t.Fatalf("%+v", q)
+	}
+	q = ClassifyLine("example.com:80")
+	if q.Kind != KindDomain || q.Port != 80 || q.Domain != "example.com" {
+		t.Fatalf("%+v", q)
+	}
+	q = ClassifyLine("2001:db8::1")
+	if q.Kind != KindIP || q.Port != 0 {
+		t.Fatalf("%+v", q)
+	}
+}

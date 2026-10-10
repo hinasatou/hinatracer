@@ -14,7 +14,15 @@ import (
 )
 
 const (
-	appVersion    = "0.6.3"
+	appVersion = "1.1.0"
+
+	// Default window sizes (a saved window-state.json overrides them).
+	mainWinW      = 1460
+	mainWinH      = 980
+	detailWinW    = 690
+	detailWinH    = 690
+	detailWinMinW = 560
+	detailWinMinH = 600
 	appRepoURL    = "https://github.com/hinasatou/hinatracer"
 	contentMinH   = float32(200)
 	pageTableMinH = float32(280)
@@ -27,6 +35,7 @@ func (a *app) view(c *ui.Context) {
 		ui.Column(c).Grow(1).MinWidth(0).Background(t.Surface).Clip().Children(func() {
 			a.viewTopBar(c)
 			ui.Column(c).Grow(1).MinWidth(0).Padding(16, 20).Gap(14).Children(func() {
+				a.viewUpdatePanel(c)
 				switch a.nav {
 				case "ping":
 					a.viewPing(c)
@@ -98,7 +107,7 @@ func (a *app) viewTopBar(c *ui.Context) {
 	})
 }
 
-func card(c *ui.Context, body func()) *ui.Element {
+func card(c *ui.Context, body func()) ui.Element {
 	t := c.Theme()
 	shadow := ui.RGBA(0, 0, 0, 0.06)
 	if t.Dark {
@@ -121,14 +130,13 @@ func regionCell(c *ui.Context, iso, name string) {
 	})
 }
 
-
-func mutedIfPlaceholder(c *ui.Context, el *ui.Element, val string) {
+func mutedIfPlaceholder(c *ui.Context, el ui.Element, val string) {
 	if val == "" || val == "…" || val == i18n.T("cell.loading") || val == i18n.T("cell.resolving") {
 		el.TextColor(c.Theme().TextMuted)
 	}
 }
 
-func clearListSelection(tbl *ui.Element, selected *int) {
+func clearListSelection(tbl ui.Element, selected *int) {
 	if tbl.Clicked() && selected != nil && *selected >= 0 {
 		*selected = -1
 	}
@@ -296,196 +304,197 @@ func (a *app) viewTraceContent(c *ui.Context) {
 	tab := a.activeTrace()
 
 	ui.Column(c).Gap(14).Padding(0, 4).MinWidth(0).FillHeight().Children(func() {
-	card(c, func() {
-		ui.Text(c, i18n.T("trace.target")).FontSize(13).Bold()
-		ui.Text(c, i18n.T("trace.desc")).FontSize(12).TextColor(t.TextMuted)
-		ui.Row(c).Gap(10).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
-			ui.TextInput(c, &tab.Host).Placeholder(i18n.T("trace.placeholder")).Label(i18n.T("trace.label")).Grow(1).MinWidth(180)
-			if ui.TextInput(c, &tab.Alias).Placeholder(i18n.T("trace.alias_ph")).Label(i18n.T("trace.alias")).Width(140).Changed() {
-				a.persist()
-			}
-			if tab.isRunning() {
-				if ui.Button(c, i18n.T("trace.stop")).Clicked() {
-					a.stopTrace()
-				}
-			} else {
-				if ui.PrimaryButton(c, i18n.T("trace.start")).Clicked() {
-					a.persist()
-					a.startTrace()
-				}
-			}
-		})
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, i18n.T("trace.mtr")).FontSize(12)
-				if ui.Switch(c, &tab.MTR).Changed() {
+		card(c, func() {
+			ui.Text(c, i18n.T("trace.target")).FontSize(13).Bold()
+			ui.Text(c, i18n.T("trace.desc")).FontSize(12).TextColor(t.TextMuted)
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
+				ui.TextInput(c, &tab.Host).Placeholder(i18n.T("trace.placeholder")).Label(i18n.T("trace.label")).Grow(1).MinWidth(180)
+				if ui.TextInput(c, &tab.Alias).Placeholder(i18n.T("trace.alias_ph")).Label(i18n.T("trace.alias")).Width(140).Changed() {
 					a.persist()
 				}
-			})
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(6, 10).Radius(8).
-				Background(t.Surface).Border(1, t.Border).Children(func() {
-				ui.Text(c, i18n.T("trace.interval")).FontSize(12).TextColor(t.TextMuted)
-				if ui.NumberInput(c, &tab.Interval, 0.2, 3600, 0.5).Width(118).Changed() {
-					a.applyTraceInterval(tab)
-				}
-				ui.Text(c, i18n.T("ping.seconds")).FontSize(12).TextColor(t.TextMuted)
-			})
-			if ui.Button(c, i18n.T("trace.reset")).Disabled(tab.isRunning()).Clicked() {
-				tab.Hops = nil
-				tab.Status = ""
-				tab.Selected = -1
-			}
-		})
-		if tab.Status != "" {
-			ui.Text(c, tab.Status).FontSize(12).TextColor(t.TextMuted)
-		}
-	}).Shrink(0)
-
-	card(c, func() {
-		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, i18n.T("trace.hops")).FontSize(14).Bold()
-			ui.Spacer(c)
-			if tab.isRunning() {
-				ui.Spinner(c)
-			}
-		})
-		display := a.sortedTraceHops(tab)
-		cols := []ui.TableColumn{
-			{Title: i18n.T("trace.col.ttl"), ID: "ttl", Width: 56, Align: ui.Center, Sortable: true, Fixed: true},
-			{Title: i18n.T("trace.col.ip"), ID: "ip", Width: 140, Sortable: true},
-			{Title: i18n.T("trace.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
-			{Title: i18n.T("trace.col.location"), ID: "location", Width: 130, Sortable: true},
-			{Title: i18n.T("trace.col.region"), ID: "region", Width: 130, Sortable: true},
-			{Title: i18n.T("trace.col.asn"), ID: "asn", Width: 160, Sortable: true},
-			{Title: i18n.T("trace.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
-			{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
-			{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
-		}
-		nRows := len(display)
-		if nRows == 0 {
-			ui.Column(c).Padding(16).AlignItems(ui.Center).Gap(4).Children(func() {
-				ui.Text(c, i18n.T("trace.empty")).FontSize(12).TextColor(t.TextMuted)
-			})
-		}
-		tbl := ui.Table(c, &tab.Table, cols, nRows, func(row, col int) {
-			h := display[row]
-			failing := hopIsFailing(h)
-			switch col {
-			case 0:
-				ui.Text(c, fmt.Sprintf("%d", h.TTL)).SingleLine()
-			case 1:
-				addr := h.Addr
-				if h.Timeout && h.Stats.Success == 0 {
-					addr = "*"
-				}
-				txt := ui.Text(c, addr).SingleLine()
-				if h.Reached {
-					txt.TextColor(t.Accent).Bold()
-				} else if h.Timeout {
-					txt.TextColor(t.Warning)
-				}
-			case 2:
-				txt := ui.Text(c, h.RDNS).SingleLine()
-				mutedIfPlaceholder(c, txt, h.RDNS)
-			case 3:
-				txt := ui.Text(c, h.Location).SingleLine()
-				mutedIfPlaceholder(c, txt, h.Location)
-			case 4:
-				regionCell(c, h.ISO, h.Region)
-			case 5:
-				txt := ui.Text(c, emptyDash(h.ASN)).SingleLine()
-				mutedIfPlaceholder(c, txt, h.ASN)
-			case 6:
-				regionCell(c, h.ASNISO, h.ASNRegion)
-			case 7:
-				ui.Textf(c, "%d", h.Stats.Success).SingleLine()
-			case 8:
-				txt := ui.Textf(c, "%d", h.Stats.Failure).SingleLine()
-				if h.Stats.Failure > 0 {
-					txt.TextColor(t.Danger)
-				}
-			case 9:
-				rate := h.Stats.SuccessRate()
-				ui.Row(c).Gap(4).AlignItems(ui.Center).Justify(ui.End).Children(func() {
-					if failing {
-						ui.Badge(c, "⚠").Background(t.Danger.Alpha(0.14)).TextColor(t.Danger)
+				if tab.isRunning() {
+					if ui.Button(c, i18n.T("trace.stop")).Clicked() {
+						a.stopTrace()
 					}
-					txt := ui.Textf(c, "%.1f%%", rate).SingleLine()
-					if failing {
-						txt.TextColor(t.Danger).Bold()
-					} else if h.Stats.Success+h.Stats.Failure > 0 && rate >= 99.5 {
-						txt.TextColor(t.Success)
+				} else {
+					if ui.PrimaryButton(c, i18n.T("trace.start")).Clicked() {
+						a.persist()
+						a.startTrace()
+					}
+				}
+			})
+			ui.Row(c).Gap(12).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, i18n.T("trace.mtr")).FontSize(12)
+					if ui.Switch(c, &tab.MTR).Changed() {
+						a.persist()
 					}
 				})
-			case 10:
-				ui.Text(c, fmtLatency(h.Stats.Last, h.Stats.Success > 0)).SingleLine()
-			case 11:
-				ui.Text(c, fmtLatency(h.Stats.Avg, h.Stats.Success > 0)).SingleLine()
-			case 12:
-				ui.Text(c, fmtLatency(h.Stats.Min, h.Stats.Success > 0)).SingleLine()
-			case 13:
-				ui.Text(c, fmtLatency(h.Stats.Max, h.Stats.Success > 0)).SingleLine()
-			case 14:
-				ui.Text(c, fmtLatency(h.Stats.Median, h.Stats.Success > 0)).SingleLine()
-			case 15:
-				ui.Text(c, fmtTime(h.Stats.LastOK)).SingleLine()
-			case 16:
-				txt := ui.Text(c, fmtTime(h.Stats.LastFail)).SingleLine()
-				if failing {
-					txt.TextColor(t.Danger)
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(6, 10).Radius(8).
+					Background(t.Surface).Border(1, t.Border).Children(func() {
+					ui.Text(c, i18n.T("trace.interval")).FontSize(12).TextColor(t.TextMuted)
+					if ui.NumberInput(c, &tab.Interval, 0.2, 3600, 0.5).Changed() {
+						a.applyTraceInterval(tab)
+					}
+					ui.Text(c, i18n.T("ping.seconds")).FontSize(12).TextColor(t.TextMuted)
+				})
+				if ui.Button(c, i18n.T("trace.reset")).Disabled(tab.isRunning()).Clicked() {
+					tab.Hops = nil
+					tab.Status = ""
+					tab.Selected = -1
+				}
+			})
+			if tab.Status != "" {
+				ui.Text(c, tab.Status).FontSize(12).TextColor(t.TextMuted)
+			}
+		}).Shrink(0)
+
+		card(c, func() {
+			ui.Row(c).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, i18n.T("trace.hops")).FontSize(14).Bold()
+				ui.Spacer(c)
+				if tab.isRunning() {
+					ui.Spinner(c)
+				}
+			})
+			display := a.sortedTraceHops(tab)
+			cols := []ui.TableColumn{
+				{Title: i18n.T("trace.col.ttl"), ID: "ttl", Width: 56, Align: ui.Center, Sortable: true, Fixed: true},
+				{Title: i18n.T("trace.col.ip"), ID: "ip", Width: 140, Sortable: true},
+				{Title: i18n.T("trace.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
+				{Title: i18n.T("trace.col.location"), ID: "location", Width: 130, Sortable: true},
+				{Title: i18n.T("trace.col.region"), ID: "region", Width: 130, Sortable: true},
+				{Title: i18n.T("trace.col.asn"), ID: "asn", Width: 160, Sortable: true},
+				{Title: i18n.T("trace.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
+				{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
+				{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
+				{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
+			}
+			nRows := len(display)
+			if nRows == 0 {
+				ui.Column(c).Padding(16).AlignItems(ui.Center).Gap(4).Children(func() {
+					ui.Text(c, i18n.T("trace.empty")).FontSize(12).TextColor(t.TextMuted)
+				})
+			}
+			keys := make([]int, len(display))
+			for i, h := range display {
+				keys[i] = h.TTL
+			}
+			tab.Table.Key = func(i int) any {
+				if i >= 0 && i < len(keys) {
+					return keys[i]
+				}
+				return -1 - i
+			}
+			var post []func()
+			tbl := ui.Table(c, &tab.Table, cols, nRows, func(row, col int) {
+				selCell(c, cols[col].Align == ui.End, func() {
+					h := display[row]
+					failing := hopIsFailing(h)
+					switch col {
+					case 0:
+						ui.Text(c, fmt.Sprintf("%d", h.TTL)).SingleLine()
+					case 1:
+						addr := h.Addr
+						if h.Timeout && h.Stats.Success == 0 {
+							addr = "*"
+						}
+						txt := ui.Text(c, addr).SingleLine()
+						if h.Reached {
+							txt.TextColor(t.Accent).Bold()
+						} else if h.Timeout {
+							txt.TextColor(t.Warning)
+						}
+					case 2:
+						txt := ui.Text(c, h.RDNS).SingleLine()
+						mutedIfPlaceholder(c, txt, h.RDNS)
+					case 3:
+						txt := ui.Text(c, h.Location).SingleLine()
+						mutedIfPlaceholder(c, txt, h.Location)
+					case 4:
+						regionCell(c, h.ISO, h.Region)
+					case 5:
+						txt := ui.Text(c, emptyDash(h.ASN)).SingleLine()
+						mutedIfPlaceholder(c, txt, h.ASN)
+					case 6:
+						regionCell(c, h.ASNISO, h.ASNRegion)
+					case 7:
+						ui.Textf(c, "%d", h.Stats.Success).SingleLine()
+					case 8:
+						txt := ui.Textf(c, "%d", h.Stats.Failure).SingleLine()
+						if h.Stats.Failure > 0 {
+							txt.TextColor(t.Danger)
+						}
+					case 9:
+						rate := h.Stats.SuccessRate()
+						ui.Row(c).Gap(4).AlignItems(ui.Center).Justify(ui.End).Children(func() {
+							if failing {
+								ui.Badge(c, "⚠").Background(t.Danger.Alpha(0.14)).TextColor(t.Danger)
+							}
+							txt := ui.Textf(c, "%.1f%%", rate).SingleLine()
+							if failing {
+								txt.TextColor(t.Danger).Bold()
+							} else if h.Stats.Success+h.Stats.Failure > 0 && rate >= 99.5 {
+								txt.TextColor(t.Success)
+							}
+						})
+					case 10:
+						lr := h.Stats.LossRate()
+						txt := ui.Textf(c, "%.1f%%", lr).SingleLine()
+						if lr > 0 {
+							txt.TextColor(t.Danger)
+						}
+					case 11:
+						ui.Text(c, fmtLatency(h.Stats.Last, h.Stats.Success > 0)).SingleLine()
+					case 12:
+						ui.Text(c, fmtLatency(h.Stats.Avg, h.Stats.Success > 0)).SingleLine()
+					case 13:
+						ui.Text(c, fmtLatency(h.Stats.Min, h.Stats.Success > 0)).SingleLine()
+					case 14:
+						ui.Text(c, fmtLatency(h.Stats.Max, h.Stats.Success > 0)).SingleLine()
+					case 15:
+						ui.Text(c, fmtLatency(h.Stats.Median, h.Stats.Success > 0)).SingleLine()
+					case 16:
+						ui.Text(c, fmtTime(h.Stats.LastOK)).SingleLine()
+					case 17:
+						txt := ui.Text(c, fmtTime(h.Stats.LastFail)).SingleLine()
+						if failing {
+							txt.TextColor(t.Danger)
+						}
+					}
+				}, func(m *ui.Menu) {
+					rightSelect(&tab.Sel, &tab.Selected, keys[row], row)
+					a.traceMenu(m, tab, display, keys, &post)
+				})
+			}).Grow(1).MinWidth(0).MinHeight(pageTableMinH).Label(i18n.T("trace.hops"))
+			clearTableSelection(tbl, &tab.Selected, &tab.Sel)
+			a.noteLayout("trace", tab.Table.Columns)
+
+			if tbl.Submitted() && submitAllowed(keys, &tab.Sel, tab.Selected) {
+				ids := selectedKeys(keys, &tab.Sel, tab.Selected)
+				for _, h := range display {
+					if h.TTL == ids[0] {
+						a.openHopDetail(h)
+						break
+					}
 				}
 			}
-		}).Grow(1).MinWidth(0).MinHeight(pageTableMinH).Label(i18n.T("trace.hops"))
-		clearListSelection(tbl, &tab.Selected)
 
-		if tbl.Submitted() {
-			sel := tab.Selected
-			if sel >= 0 && sel < len(display) {
-				a.openHopDetail(display[sel])
+			tbl.ContextMenu(func(m *ui.Menu) {
+				a.traceMenu(m, tab, display, keys, &post)
+			})
+			for _, f := range post {
+				f()
 			}
-		}
-
-		tbl.ContextMenu(func(m *ui.Menu) {
-			sel := tab.Selected
-			if sel < 0 || sel >= len(display) {
-				m.Item(i18n.T("trace.ctx.none")).Disabled(true)
-				return
-			}
-			h := display[sel]
-			vals := []struct{ label, v string }{
-				{i18n.T("trace.ctx.copy_ip"), h.Addr},
-				{i18n.T("trace.ctx.copy_rdns"), h.RDNS},
-				{i18n.T("trace.ctx.copy_location"), h.Location},
-				{i18n.T("trace.ctx.copy_region"), flagx.CopyLabel(h.ISO, h.Region)},
-				{i18n.T("trace.ctx.copy_asn"), h.ASN},
-				{i18n.T("trace.ctx.copy_asn_region"), flagx.CopyLabel(h.ASNISO, h.ASNRegion)},
-				{i18n.T("ping.ctx.copy_rate"), fmt.Sprintf("%.1f%%", h.Stats.SuccessRate())},
-				{i18n.T("ping.ctx.copy_last"), fmtLatency(h.Stats.Last, h.Stats.Success > 0)},
-			}
-			for _, it := range vals {
-				v := it.v
-				if m.Item(it.label).Disabled(v == "" || v == "*" || v == "—").Chosen() {
-					copyText(v)
-				}
-			}
-			m.Separator()
-			ipOK := h.Addr != "" && h.Addr != "*"
-			if m.Item(i18n.T("trace.ctx.add_ping")).Disabled(!ipOK).Chosen() {
-				a.addPingFromTrace(h.Addr, h.RDNS)
-			}
-			if m.Item(i18n.T("trace.ctx.detail")).Disabled(!ipOK && h.Stats.Success+h.Stats.Failure == 0).Chosen() {
-				a.openHopDetail(h)
-			}
-		})
-	}).Grow(1).MinWidth(0).MinHeight(contentMinH)
+		}).Grow(1).MinWidth(0).MinHeight(contentMinH)
 	})
 }
 
@@ -561,6 +570,8 @@ func (a *app) sortedTraceHops(tab *traceTab) []traceHopView {
 			cmp = cmpInt(sa.Stats.Failure, sb.Stats.Failure)
 		case "success_rate":
 			cmp = cmpFloat(sa.Stats.SuccessRate(), sb.Stats.SuccessRate())
+		case "loss_rate":
+			cmp = cmpFloat(sa.Stats.LossRate(), sb.Stats.LossRate())
 		case "last":
 			cmp = cmpFloat(sa.Stats.Last, sb.Stats.Last)
 		case "avg":
@@ -625,7 +636,7 @@ func (a *app) viewPing(c *ui.Context) {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(6, 10).Radius(8).
 					Background(t.Surface).Border(1, t.Border).Children(func() {
 					ui.Text(c, i18n.T("ping.interval")).FontSize(12).TextColor(t.TextMuted)
-					if ui.NumberInput(c, &a.pingInterval, 0.2, 3600, 0.5).Width(118).Changed() {
+					if ui.NumberInput(c, &a.pingInterval, 0.2, 3600, 0.5).Changed() {
 						a.applyInterval()
 					}
 					ui.Text(c, i18n.T("ping.seconds")).FontSize(12).TextColor(t.TextMuted)
@@ -649,8 +660,9 @@ func (a *app) viewPing(c *ui.Context) {
 					a.pingMgr.ResetStats(0)
 					a.pingSnaps = a.pingMgr.Snapshots()
 				}
-				if ui.Button(c, i18n.T("ping.delete_sel")).Disabled(a.pingSelected < 0).Clicked() {
-					a.removeSelectedPing()
+				selIDs := selectedKeys(pingKeys(a.sortedPingSnaps()), &a.pingSel, a.pingSelected)
+				if ui.Button(c, i18n.T("ping.delete_sel")).Disabled(len(selIDs) == 0).Clicked() {
+					a.deletePingIDs(selIDs)
 				}
 			})
 		})
@@ -689,6 +701,7 @@ func (a *app) viewPing(c *ui.Context) {
 			{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
 			{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
 			{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
+			{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
 			{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
 			{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
 			{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
@@ -711,189 +724,163 @@ func (a *app) viewPing(c *ui.Context) {
 			a.pingTable.Reorder = nil
 		}
 		a.syncAliasEditsFor(display)
+		keys := pingKeys(display)
+		a.pingTable.Key = func(i int) any {
+			if i >= 0 && i < len(keys) {
+				return keys[i]
+			}
+			return -1 - i
+		}
+		var post []func()
 		tbl := ui.Table(c, &a.pingTable, cols, n, func(row, col int) {
-			s := display[row]
-			meta := a.hostMetaOf(s.Host)
-			loc, region, iso := meta.Loc, meta.Region, meta.ISO
-			failing := pingIsFailing(s)
-			cfgIdx := a.pingMgr.IndexOf(s.ID)
-			muted := !s.Enabled
-			cellColor := func(el *ui.Element) {
-				if muted {
-					el.TextColor(t.TextMuted)
-				}
-			}
-			switch col {
-			case 0:
-				ord := "—"
-				if cfgIdx >= 0 {
-					ord = fmt.Sprintf("%d", cfgIdx+1)
-				}
-				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					txt := ui.Text(c, ord).SingleLine()
-					cellColor(txt)
+			selCell(c, cols[col].Align == ui.End, func() {
+				s := display[row]
+				meta := a.hostMetaOf(s.Host)
+				loc, region, iso := meta.Loc, meta.Region, meta.ISO
+				failing := pingIsFailing(s)
+				cfgIdx := a.pingMgr.IndexOf(s.ID)
+				muted := !s.Enabled
+				cellColor := func(el ui.Element) {
 					if muted {
-						ui.Badge(c, i18n.T("badge.disabled")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
+						el.TextColor(t.TextMuted)
 					}
-				})
-			case 1:
-				if ui.EditableText(c, &a.aliasEdits[row]).Changed() {
-					a.pingMgr.SetAlias(s.ID, a.aliasEdits[row])
-					a.refreshPingSnaps()
-					a.persist()
 				}
-			case 2:
-				txt := ui.Text(c, s.Host).SingleLine()
-				cellColor(txt)
-			case 3:
-				rdns := a.pingRDNSOf(s.Host)
-				txt := ui.Text(c, rdns).SingleLine()
-				if muted {
+				switch col {
+				case 0:
+					ord := "—"
+					if cfgIdx >= 0 {
+						ord = fmt.Sprintf("%d", cfgIdx+1)
+					}
+					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+						txt := ui.Text(c, ord).SingleLine()
+						cellColor(txt)
+						if muted {
+							ui.Badge(c, i18n.T("badge.disabled")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
+						}
+					})
+				case 1:
+					if ui.EditableText(c, &a.aliasEdits[row]).Changed() {
+						a.pingMgr.SetAlias(s.ID, a.aliasEdits[row])
+						a.refreshPingSnaps()
+						a.persist()
+					}
+				case 2:
+					ui.Row(c).Gap(4).AlignItems(ui.Center).MinWidth(0).Children(func() {
+						if s.Proto == pinger.ProtoTCP {
+							ui.Badge(c, "TCP").Background(t.Accent.Alpha(0.14)).TextColor(t.Accent)
+						}
+						txt := ui.Text(c, s.Host).SingleLine()
+						cellColor(txt)
+					})
+				case 3:
+					rdns := a.pingRDNSOf(s.Host)
+					txt := ui.Text(c, rdns).SingleLine()
+					if muted {
+						cellColor(txt)
+					} else {
+						mutedIfPlaceholder(c, txt, rdns)
+					}
+				case 4:
+					txt := ui.Text(c, loc).SingleLine()
+					if muted {
+						cellColor(txt)
+					} else {
+						mutedIfPlaceholder(c, txt, loc)
+					}
+				case 5:
+					regionCell(c, iso, region)
+				case 6:
+					txt := ui.Text(c, meta.ASN).SingleLine()
+					if muted {
+						cellColor(txt)
+					} else {
+						mutedIfPlaceholder(c, txt, meta.ASN)
+					}
+				case 7:
+					regionCell(c, meta.ASNISO, meta.ASNRegion)
+				case 8:
+					txt := ui.Textf(c, "%d", s.Stats.Success).SingleLine()
 					cellColor(txt)
-				} else {
-					mutedIfPlaceholder(c, txt, rdns)
-				}
-			case 4:
-				txt := ui.Text(c, loc).SingleLine()
-				if muted {
+				case 9:
+					txt := ui.Textf(c, "%d", s.Stats.Failure).SingleLine()
+					if s.Stats.Failure > 0 && !muted {
+						txt.TextColor(t.Danger)
+					} else {
+						cellColor(txt)
+					}
+				case 10:
+					rate := s.Stats.SuccessRate()
+					ui.Row(c).Gap(4).AlignItems(ui.Center).Justify(ui.End).Children(func() {
+						if failing && !muted {
+							ui.Badge(c, "⚠").Background(t.Danger.Alpha(0.14)).TextColor(t.Danger)
+						}
+						txt := ui.Textf(c, "%.1f%%", rate).SingleLine()
+						if muted {
+							txt.TextColor(t.TextMuted)
+						} else if failing {
+							txt.TextColor(t.Danger).Bold()
+						} else if s.Stats.Success+s.Stats.Failure > 0 && rate >= 99.5 {
+							txt.TextColor(t.Success)
+						}
+					})
+				case 11:
+					lr := s.Stats.LossRate()
+					txt := ui.Textf(c, "%.1f%%", lr).SingleLine()
+					if lr > 0 && !muted {
+						txt.TextColor(t.Danger)
+					} else {
+						cellColor(txt)
+					}
+				case 12:
+					txt := ui.Text(c, fmtLatency(s.Stats.Last, s.Stats.Success > 0)).SingleLine()
 					cellColor(txt)
-				} else {
-					mutedIfPlaceholder(c, txt, loc)
-				}
-			case 5:
-				regionCell(c, iso, region)
-			case 6:
-				txt := ui.Text(c, meta.ASN).SingleLine()
-				if muted {
+				case 13:
+					txt := ui.Text(c, fmtLatency(s.Stats.Avg, s.Stats.Success > 0)).SingleLine()
 					cellColor(txt)
-				} else {
-					mutedIfPlaceholder(c, txt, meta.ASN)
-				}
-			case 7:
-				regionCell(c, meta.ASNISO, meta.ASNRegion)
-			case 8:
-				txt := ui.Textf(c, "%d", s.Stats.Success).SingleLine()
-				cellColor(txt)
-			case 9:
-				txt := ui.Textf(c, "%d", s.Stats.Failure).SingleLine()
-				if s.Stats.Failure > 0 && !muted {
-					txt.TextColor(t.Danger)
-				} else {
+				case 14:
+					txt := ui.Text(c, fmtLatency(s.Stats.Min, s.Stats.Success > 0)).SingleLine()
 					cellColor(txt)
-				}
-			case 10:
-				rate := s.Stats.SuccessRate()
-				ui.Row(c).Gap(4).AlignItems(ui.Center).Justify(ui.End).Children(func() {
+				case 15:
+					txt := ui.Text(c, fmtLatency(s.Stats.Max, s.Stats.Success > 0)).SingleLine()
+					cellColor(txt)
+				case 16:
+					txt := ui.Text(c, fmtLatency(s.Stats.Median, s.Stats.Success > 0)).SingleLine()
+					cellColor(txt)
+				case 17:
+					txt := ui.Text(c, fmtTime(s.Stats.LastOK)).SingleLine()
+					cellColor(txt)
+				case 18:
+					txt := ui.Text(c, fmtTime(s.Stats.LastFail)).SingleLine()
 					if failing && !muted {
-						ui.Badge(c, "⚠").Background(t.Danger.Alpha(0.14)).TextColor(t.Danger)
+						txt.TextColor(t.Danger)
+					} else {
+						cellColor(txt)
 					}
-					txt := ui.Textf(c, "%.1f%%", rate).SingleLine()
-					if muted {
-						txt.TextColor(t.TextMuted)
-					} else if failing {
-						txt.TextColor(t.Danger).Bold()
-					} else if s.Stats.Success+s.Stats.Failure > 0 && rate >= 99.5 {
-						txt.TextColor(t.Success)
-					}
-				})
-			case 11:
-				txt := ui.Text(c, fmtLatency(s.Stats.Last, s.Stats.Success > 0)).SingleLine()
-				cellColor(txt)
-			case 12:
-				txt := ui.Text(c, fmtLatency(s.Stats.Avg, s.Stats.Success > 0)).SingleLine()
-				cellColor(txt)
-			case 13:
-				txt := ui.Text(c, fmtLatency(s.Stats.Min, s.Stats.Success > 0)).SingleLine()
-				cellColor(txt)
-			case 14:
-				txt := ui.Text(c, fmtLatency(s.Stats.Max, s.Stats.Success > 0)).SingleLine()
-				cellColor(txt)
-			case 15:
-				txt := ui.Text(c, fmtLatency(s.Stats.Median, s.Stats.Success > 0)).SingleLine()
-				cellColor(txt)
-			case 16:
-				txt := ui.Text(c, fmtTime(s.Stats.LastOK)).SingleLine()
-				cellColor(txt)
-			case 17:
-				txt := ui.Text(c, fmtTime(s.Stats.LastFail)).SingleLine()
-				if failing && !muted {
-					txt.TextColor(t.Danger)
-				} else {
-					cellColor(txt)
 				}
-			}
+			}, func(m *ui.Menu) {
+				rightSelect(&a.pingSel, &a.pingSelected, keys[row], row)
+				a.pingMenu(m, display, keys, &post)
+			})
 		}).Grow(1).MinWidth(0).MinHeight(pageTableMinH).Label(i18n.T("ping.list_label"))
-		clearListSelection(tbl, &a.pingSelected)
+		clearTableSelection(tbl, &a.pingSelected, &a.pingSel)
+		a.notePingLayout()
 
-		if tbl.Submitted() {
-			sel := a.pingSelected
-			if sel >= 0 && sel < len(display) {
-				a.openPingDetail(display[sel])
+		if tbl.Submitted() && submitAllowed(keys, &a.pingSel, a.pingSelected) {
+			ids := selectedKeys(keys, &a.pingSel, a.pingSelected)
+			for _, s := range display {
+				if len(ids) == 1 && s.ID == ids[0] {
+					a.openPingDetail(s)
+					break
+				}
 			}
 		}
 
 		tbl.ContextMenu(func(m *ui.Menu) {
-			sel := a.pingSelected
-			if sel < 0 || sel >= len(display) {
-				m.Item(i18n.T("ping.ctx.none")).Disabled(true)
-				return
-			}
-			s := display[sel]
-			meta := a.hostMetaOf(s.Host)
-			loc, region, iso := meta.Loc, meta.Region, meta.ISO
-			copyItems := []struct{ label, v string }{
-				{i18n.T("ping.ctx.copy_alias"), s.Alias},
-				{i18n.T("ping.ctx.copy_host"), s.Host},
-				{i18n.T("ping.ctx.copy_rdns"), a.pingRDNSOf(s.Host)},
-				{i18n.T("ping.ctx.copy_location"), loc},
-				{i18n.T("ping.ctx.copy_region"), flagx.CopyLabel(iso, region)},
-				{i18n.T("ping.ctx.copy_asn"), meta.ASN},
-				{i18n.T("ping.ctx.copy_asn_region"), flagx.CopyLabel(meta.ASNISO, meta.ASNRegion)},
-				{i18n.T("ping.ctx.copy_rate"), fmt.Sprintf("%.1f%%", s.Stats.SuccessRate())},
-				{i18n.T("ping.ctx.copy_last"), fmtLatency(s.Stats.Last, s.Stats.Success > 0)},
-			}
-			for _, it := range copyItems {
-				v := it.v
-				if m.Item(it.label).Disabled(v == "" || v == "—").Chosen() {
-					copyText(v)
-				}
-			}
-			m.Separator()
-			if m.Item(i18n.T("ping.ctx.edit_alias")).Chosen() {
-				a.openAliasEdit(s.ID, s.Alias)
-			}
-			cfgIdx := a.pingMgr.IndexOf(s.ID)
-			if m.Item(i18n.T("ping.ctx.move_up")).Disabled(cfgIdx <= 0).Chosen() {
-				a.moveSelectedPing(true)
-			}
-			if m.Item(i18n.T("ping.ctx.move_down")).Disabled(cfgIdx < 0 || cfgIdx >= len(a.pingSnaps)-1).Chosen() {
-				a.moveSelectedPing(false)
-			}
-			m.Separator()
-			if s.Enabled {
-				if m.Item(i18n.T("ping.ctx.disable")).Chosen() {
-					a.togglePingEnabled(s.ID, false)
-				}
-			} else {
-				if m.Item(i18n.T("ping.ctx.enable")).Chosen() {
-					a.togglePingEnabled(s.ID, true)
-				}
-			}
-			m.Separator()
-			if m.Item(i18n.T("ping.ctx.detail")).Chosen() {
-				a.openPingDetail(s)
-			}
-			if m.Item(i18n.T("ping.ctx.traceroute")).Chosen() {
-				a.jumpToTrace(s.Host)
-			}
-			m.Separator()
-			if m.Item(i18n.T("ping.ctx.delete")).Chosen() {
-				a.pingMgr.Remove(s.ID)
-				a.refreshPingSnaps()
-				a.pingSelected = -1
-				a.persist()
-			}
+			a.pingMenu(m, display, keys, &post)
 		})
+		for _, f := range post {
+			f()
+		}
 
 		a.viewAliasEditModal(c)
 		a.viewImportModal(c)
@@ -1028,6 +1015,7 @@ func (a *app) viewPingDetail(c *ui.Context) {
 		rows := [][2]string{
 			{firstLabel, firstVal},
 			{i18n.T("detail.host"), s.Host},
+			{i18n.T("detail.proto"), string(pinger.ProtoOf(s.Host))},
 			{i18n.T("detail.rdns"), a.pingRDNSOf(s.Host)},
 			{i18n.T("detail.location"), loc},
 			{i18n.T("detail.region"), flagx.NameOnly(iso, region)},
@@ -1036,6 +1024,7 @@ func (a *app) viewPingDetail(c *ui.Context) {
 			{i18n.T("detail.success"), fmt.Sprintf("%d", s.Stats.Success)},
 			{i18n.T("detail.failure"), fmt.Sprintf("%d", s.Stats.Failure)},
 			{i18n.T("detail.rate"), fmt.Sprintf("%.1f%%", s.Stats.SuccessRate())},
+			{i18n.T("detail.loss"), fmt.Sprintf("%.1f%%", s.Stats.LossRate())},
 			{i18n.T("detail.last"), fmtLatency(s.Stats.Last, s.Stats.Success > 0)},
 			{i18n.T("detail.avg"), fmtLatency(s.Stats.Avg, s.Stats.Success > 0)},
 			{i18n.T("detail.min"), fmtLatency(s.Stats.Min, s.Stats.Success > 0)},
@@ -1095,6 +1084,7 @@ func formatPingDetail(s pinger.Snapshot, loc, iso, region, asnText, asnISO, asnR
 	pairs := [][2]string{
 		{firstLabel, firstVal},
 		{i18n.T("detail.host"), s.Host},
+		{i18n.T("detail.proto"), string(pinger.ProtoOf(s.Host))},
 		{i18n.T("detail.rdns"), emptyDash(rdns)},
 		{i18n.T("detail.location"), loc},
 		{i18n.T("detail.region"), flagx.CopyLabel(iso, region)},
@@ -1103,6 +1093,7 @@ func formatPingDetail(s pinger.Snapshot, loc, iso, region, asnText, asnISO, asnR
 		{i18n.T("detail.success"), fmt.Sprintf("%d", s.Stats.Success)},
 		{i18n.T("detail.failure"), fmt.Sprintf("%d", s.Stats.Failure)},
 		{i18n.T("detail.rate"), fmt.Sprintf("%.1f%%", s.Stats.SuccessRate())},
+		{i18n.T("detail.loss"), fmt.Sprintf("%.1f%%", s.Stats.LossRate())},
 		{i18n.T("detail.last"), fmtLatency(s.Stats.Last, s.Stats.Success > 0)},
 		{i18n.T("detail.avg"), fmtLatency(s.Stats.Avg, s.Stats.Success > 0)},
 		{i18n.T("detail.min"), fmtLatency(s.Stats.Min, s.Stats.Success > 0)},
@@ -1237,6 +1228,8 @@ func (a *app) viewSettings(c *ui.Context) {
 				}
 			})
 
+			a.viewSettingsUpdate(c)
+
 			card(c, func() {
 				ui.Text(c, i18n.T("settings.dl_all.title")).FontSize(14).Bold()
 				ui.Text(c, i18n.T("settings.dl_all.desc")).FontSize(12).TextColor(t.TextMuted)
@@ -1319,6 +1312,7 @@ func (a *app) viewAbout(c *ui.Context) {
 	card(c, func() {
 		ui.Text(c, i18n.T("about.name")).FontSize(20).Bold()
 		ui.Text(c, i18n.Tf("about.version", appVersion)).FontSize(13).TextColor(t.TextMuted)
+		a.viewAboutUpdate(c)
 		ui.Divider(c)
 		ui.Text(c, i18n.T("about.desc")).FontSize(13)
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {

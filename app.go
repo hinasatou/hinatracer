@@ -14,8 +14,8 @@ import (
 
 	"hinatracer/i18n"
 	"hinatracer/internal/asn"
-	"hinatracer/internal/datadl"
 	"hinatracer/internal/config"
+	"hinatracer/internal/datadl"
 	"hinatracer/internal/flagx"
 	"hinatracer/internal/geoip"
 	"hinatracer/internal/ipdb"
@@ -30,11 +30,17 @@ type app struct {
 
 	dbMu     sync.RWMutex
 	reloadMu sync.Mutex // serialize reloadDBs
-	ipDB  *ipdb.DB
-	geoDB *geoip.DB
-	asnDB *asn.DB
+	ipDB     *ipdb.DB
+	geoDB    *geoip.DB
+	asnDB    *asn.DB
 
 	dbsLoading bool
+
+	upd updState
+
+	layoutMu      sync.Mutex
+	layoutPending map[string]config.TableLayout
+	layoutTimer   *time.Timer
 
 	nav string // "trace" | "ping" | "iplookup" | "settings" | "about"
 
@@ -44,6 +50,7 @@ type app struct {
 	lookupMu       sync.Mutex
 	lookupSelected int
 	lookupTable    ui.ListState
+	lookupSel      ui.Selection[int]
 	lookupSort     ui.SortOrder
 	lookupStatus   string
 	nextLookupID   int
@@ -53,10 +60,10 @@ type app struct {
 	dataDLStatus string
 
 	// traceroute tabs
-	traceTabs      []*traceTab
-	traceActive    int
-	nextTraceID    int
-	tabStripWidth  float32 // left vertical tab list width
+	traceTabs     []*traceTab
+	traceActive   int
+	nextTraceID   int
+	tabStripWidth float32 // left vertical tab list width
 
 	// ping
 	pingMgr      *pinger.Manager
@@ -65,6 +72,7 @@ type app struct {
 	pingInterval float64
 	pingSelected int
 	pingTable    ui.ListState
+	pingSel      ui.Selection[int]
 	pingSort     ui.SortOrder
 	pingSnaps    []pinger.Snapshot
 	aliasEdits   []string
@@ -80,8 +88,8 @@ type app struct {
 	pingRDNSMu sync.Mutex
 
 	// host geo/ASN cache (never looked up in view/render)
-	hostMeta   map[string]hostMeta
-	hostMetaMu sync.Mutex
+	hostMeta     map[string]hostMeta
+	hostMetaMu   sync.Mutex
 	metaInflight map[string]bool
 
 	// UI update throttle (<=10/sec)
@@ -95,11 +103,11 @@ type app struct {
 	importResult string
 
 	// duplicate confirm (single add)
-	dupOpen      bool
-	dupHost      string
-	dupOldAlias  string
-	dupNewAlias  string
-	dupTargetID  int
+	dupOpen     bool
+	dupHost     string
+	dupOldAlias string
+	dupNewAlias string
+	dupTargetID int
 
 	// batch conflict confirm
 	conflictOpen bool
@@ -215,10 +223,12 @@ func newApp() *app {
 	a.langName = i18n.Name(i18n.Language())
 	a.themeName = themeDisplayName(cfg.Theme)
 	a.pingTable.Selected = &a.pingSelected
+	a.pingTable.Selection = &a.pingSel
 	a.pingSort = ui.SortOrder{Column: "#"}
 	a.pingTable.Sort = &a.pingSort
 	a.initTraceTabs()
 	a.initIPLookup()
+	a.restoreLayouts()
 	a.dataDL = datadl.NewManager()
 	a.dataDL.SetOnUpdate(func() { a.requestUIUpdate() })
 
@@ -270,6 +280,7 @@ func (a *app) setWindow(w *mygo.Window) {
 		a.requestUIUpdate()
 	})
 	safeGo("bootstrap", a.bootstrapAfterWindow)
+	a.scheduleStartupUpdateCheck(5 * time.Second)
 }
 
 func (a *app) bootstrapAfterWindow() {
@@ -342,7 +353,6 @@ func (a *app) flushUIUpdate() {
 		}
 	})
 }
-
 
 func (a *app) setDBStatus(loading bool, status string) {
 	a.dbMu.Lock()
@@ -795,10 +805,10 @@ func (a *app) openDetailWindow(s pinger.Snapshot) {
 	parent := a.win
 	w := mygo.NewWindow(mygo.WindowOptions{
 		Title:     title,
-		Width:     440,
-		Height:    560,
-		MinWidth:  360,
-		MinHeight: 400,
+		Width:     detailWinW,
+		Height:    detailWinH,
+		MinWidth:  detailWinMinW,
+		MinHeight: detailWinMinH,
 		Parent:    parent,
 		Modal:     true,
 		StateKey:  "ping-detail",
@@ -887,6 +897,8 @@ func (a *app) sortedPingSnaps() []pinger.Snapshot {
 			cmp = cmpInt(sa.Stats.Failure, sb.Stats.Failure)
 		case "success_rate":
 			cmp = cmpFloat(sa.Stats.SuccessRate(), sb.Stats.SuccessRate())
+		case "loss_rate":
+			cmp = cmpFloat(sa.Stats.LossRate(), sb.Stats.LossRate())
 		case "last":
 			cmp = cmpFloat(sa.Stats.Last, sb.Stats.Last)
 		case "avg":
@@ -973,7 +985,6 @@ func cmpTime(a, b time.Time) int {
 	}
 }
 
-
 func (a *app) pingRDNSOf(host string) string {
 	key := pinger.NormalizeHost(host)
 	a.pingRDNSMu.Lock()
@@ -1040,6 +1051,7 @@ func (a *app) resolvePingRDNS(host, key string) {
 }
 
 func lookupHostRDNS(host string, timeout time.Duration) string {
+	host = pinger.HostOnly(host)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	ipStr := ""
@@ -1137,7 +1149,6 @@ func (a *app) reorderPingRows(rows []int, to int) {
 	a.persist()
 }
 
-
 func (a *app) invalidateHostMeta() {
 	a.hostMetaMu.Lock()
 	a.hostMeta = map[string]hostMeta{}
@@ -1213,7 +1224,7 @@ func (a *app) resolveHostMeta(host, key string) {
 		delete(a.metaInflight, key)
 		a.hostMetaMu.Unlock()
 	}()
-	ip := lookupIPOnly(host, 3*time.Second)
+	ip := lookupIPOnly(pinger.HostOnly(host), 3*time.Second)
 	m := hostMeta{Ready: true, Resolving: false}
 	if ip == "" {
 		dash := "—"

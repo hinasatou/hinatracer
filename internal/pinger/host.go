@@ -12,10 +12,17 @@ func NormalizeHost(host string) string {
 	if host == "" {
 		return ""
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.String()
+	pt := ParseTarget(host)
+	h := pt.Host
+	if ip := net.ParseIP(h); ip != nil {
+		h = ip.String()
+	} else {
+		h = strings.ToLower(h)
 	}
-	return strings.ToLower(host)
+	if pt.Port > 0 {
+		return ParsedTarget{Host: h, Port: pt.Port}.String()
+	}
+	return h
 }
 
 // SameHost reports whether two host strings refer to the same target.

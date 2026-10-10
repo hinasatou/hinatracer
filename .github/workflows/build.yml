@@ -76,6 +76,9 @@ jobs:
           if (Test-Path $zip) { Remove-Item -Force $zip }
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
           Remove-Item -Recurse -Force $stage
+          $setup = Get-ChildItem -Path build\windows-amd64 -Filter 'HinaTracer Setup *.exe' | Select-Object -First 1
+          if (-not $setup) { throw "missing NSIS installer 'HinaTracer Setup <ver>.exe' from mygo build" }
+          Copy-Item $setup.FullName (Join-Path (Resolve-Path dist) "HinaTracer-v$env:VERSION-windows-amd64-setup.exe")
           Get-ChildItem dist
 
       - name: Package Linux
@@ -120,7 +123,7 @@ jobs:
           ls -la dist/
 
       - name: Upload packaged artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: hinatracer-${{ matrix.artifact }}
           path: dist/*
@@ -132,7 +135,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true

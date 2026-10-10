@@ -21,3 +21,10 @@ func TestParseImportText(t *testing.T) {
 		t.Fatalf("%#v", ents[2])
 	}
 }
+
+func TestParseImportTCP(t *testing.T) {
+	es, inv := parseImportText("1.2.3.5:443,web\n[2001:db8::1]:22\n2001:db8::2,v6")
+	if inv != 0 || len(es) != 3 || es[0].Host != "1.2.3.5:443" || es[0].Alias != "web" || es[1].Host != "[2001:db8::1]:22" || es[2].Host != "2001:db8::2" {
+		t.Fatalf("%+v", es)
+	}
+}

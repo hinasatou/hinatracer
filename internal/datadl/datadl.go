@@ -40,9 +40,9 @@ const (
 
 // FileSpec describes one downloadable file.
 type FileSpec struct {
-	Kind     Kind
-	URL      string
-	Filename string // default filename when path unset
+	Kind       Kind
+	URL        string
+	Filename   string // default filename when path unset
 	ConfigPath string // current configured path (may be empty)
 }
 
@@ -66,16 +66,16 @@ func ResolveTargetPath(configDir, configPath, defaultName string) string {
 
 // Progress is a snapshot of one file's download state.
 type Progress struct {
-	Kind      Kind
-	Filename  string
-	Target    string
-	Bytes     int64
-	Total     int64 // 0 if unknown
-	Percent   float64
-	SpeedBPS  float64
-	State     string // pending|running|ok|error|canceled
-	Err       string
-	Done      bool
+	Kind     Kind
+	Filename string
+	Target   string
+	Bytes    int64
+	Total    int64 // 0 if unknown
+	Percent  float64
+	SpeedBPS float64
+	State    string // pending|running|ok|error|canceled
+	Err      string
+	Done     bool
 }
 
 // Manager runs concurrent downloads with cancel and progress callbacks.

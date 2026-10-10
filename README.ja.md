@@ -1,97 +1,104 @@
-[English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-HK.md) | 日本語
+[English](README.md) | [中文(简体)](README.zh-CN.md) | [中文(繁體)](README.zh-HK.md) | 日本語
 
 # HinaTracer
 
-<img src="resources/icon.png" width="64" height="64" alt="HinaTracer アイコン" />
+<img src="resources/icon.png" width="96" height="96" alt="HinaTracer アイコン" />
 
-クロスプラットフォームのネイティブ UI ネットワーク診断ツール：**Ping 監視**、**Traceroute**（MTR）、**IP 検索**。[mygo](https://github.com/egoist/mygo) v0.2.9 製。**qqwry.ipdb**（IPIP 形式）、Loyalsoldier GeoIP の地域フラグ（埋め込み flagcdn PNG、絵文字フォールバック）、**iptoasn ASN**（番号・組織・登録地域）でホップ/ホストを注釈。**IPv4 / IPv6** 対応。
+Windows・macOS・Linux 向けのネイティブなデスクトップ用ネットワークツールです。継続的な Ping（ICMP / TCP）、traceroute / MTR、IP 検索ができ、各アドレスの位置・地域・ASN 情報も表示します。
 
 ## 機能
 
-1. **Ping 監視**（デフォルト）— 間隔付き ICMP。成功/失敗、成功率、遅延の last/avg/min/max/median、タイムスタンプ。別名・ホスト・rDNS・位置・地域・ASN。一括インポート（行ごと `host` または `host,alias`）、有効/無効、コンテキストメニュー、ダブルクリックで詳細。
-2. **Traceroute** — 左の Chrome 風縦タブ（状態ドット、タイトル、閉じる、右クリック、幅変更）。デフォルト **MTR**。複数タブ同時実行。**すべて開始 / すべて停止**対応。ホップ表は Ping と同様の統計列。右クリックでコピー、ホップ詳細、Ping への追加。
-3. **IP 検索** — IP（v4/v6）またはドメイン（複数行可）。A/AAAA を非同期解決し、位置・地域旗・ASN を表示。右クリックで Ping / Traceroute へ追加。
-4. **設定** — 言語（簡体中国語/繁体字中国語/日本語/English＋カスタム）、テーマ、データファイルパス、**一括ダウンロード/更新**、起動時自動開始。
-5. **About** — アプリ名・バージョン・GitHub。
-6. **設定とクラッシュログ** — 下記参照。
+- **Ping 監視**：複数のターゲットを同時に監視し、成功率・パケット損失率と、直近 / 平均 / 最小 / 最大 / 中央値の遅延をリアルタイムに表示。ターゲットごとの有効化・無効化、別名、詳細表示に対応し、1 件ずつの追加も一括インポートもできます。
+- **TCP Ping**：ターゲットにポートを付ける（例：`example.com:443`）と、ICMP の代わりに TCP 接続時間を測定します。
+- **ルート追跡 / MTR**：追跡ごとにタブが分かれます。MTR モードでは各ホップを継続的にプローブし、全タブの一括開始・停止も可能です。ホップはワンクリックで Ping 監視に追加できます。
+- **IP 検索**：IP またはドメインを 1 行に 1 件入力。ドメインはすべての IPv4 / IPv6 アドレスに解決され、各アドレスの遅延も簡易測定します。
+- **地域と ASN 情報**：各アドレスの位置、地域（旗アイコン付き）、ASN / ネットワーク名、ASN の登録地域を表示。IPv4 と IPv6 の両方に対応しています。
+- **使いやすい表**：任意の列で並べ替え、列幅と列順の変更（次回起動時も保持）、複数行を選択して右クリックでまとめて操作できます。
+- **アップデート確認**：起動時に GitHub Releases を確認し（正式版のみ、またはプレビュー版を含む）、新バージョンのダウンロード・検証・インストールまで行えます。
+- **言語とテーマ**：中文(简体)、中文(繁體)、日本語、English に加え、独自の言語パックも利用可能。ライト / ダーク / システムに合わせるの 3 テーマ。
 
 ## ダウンロード
 
-バイナリは **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)** で公開します（下書き作成後、手動で Publish）。タグ `vX.Y.Z` の主な成果物：
+最新版は **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)** から入手できます。
 
-| ファイル | 内容 |
-|----------|------|
-| `HinaTracer-vX.Y.Z-windows-amd64.zip` | `HinaTracer.exe`（GUI）、`LICENSE`、`README.md` |
-| `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | バイナリ、`.desktop`、アイコン、`LICENSE`、`README.md` |
-| `HinaTracer-vX.Y.Z-linux-amd64.deb` | mygo が生成する deb |
-| `HinaTracer-vX.Y.Z-macos-arm64.zip` / `…-macos-amd64.zip` | `HinaTracer.app` と `LICENSE`、`README.md` |
-| `SHA256SUMS.txt` | 上記ファイルの SHA-256 チェックサム |
+| プラットフォーム | ファイル | 備考 |
+|------------------|----------|------|
+| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64-setup.exe` | インストーラー（推奨）。現在のユーザーにインストールされ、管理者権限は不要 |
+| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64.zip` | ポータブル版。展開して `HinaTracer.exe` を実行 |
+| macOS (Apple シリコン) | `HinaTracer-vX.Y.Z-macos-arm64.zip` | `HinaTracer.app` を同梱 |
+| macOS (Intel) | `HinaTracer-vX.Y.Z-macos-amd64.zip` | `HinaTracer.app` を同梱 |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.deb` | Debian / Ubuntu とその派生ディストリビューション向け |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | ポータブル版バイナリ（デスクトップエントリとアイコン付き） |
+| 共通 | `SHA256SUMS.txt` | ダウンロードの検証用チェックサム |
 
-## プラットフォーム
+## プラットフォームごとの注意
 
-| プラットフォーム | 備考 | ICMP |
-|------------------|------|------|
-| **Windows 10/11** x64 | WebView2 / CGO 不要 | `IcmpSendEcho` / `Icmp6SendEcho2` |
-| **macOS** 12+（amd64 / arm64） | ネイティブ UI | 非特権 ICMP datagram 優先。raw / `ping` フォールバック |
-| **Linux** amd64 | ネイティブ UI（必須 GTK なし） | 同上。非特権 ICMP には `net.ipv4.ping_group_range` が必要 |
-
-### Linux の ping 権限
+**Linux：Ping の権限。** 権限エラーで Ping が失敗する場合は、非特権 ICMP を許可するか、バイナリに raw ソケットの権限を付与してください。
 
 ```bash
-sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
-sudo setcap cap_net_raw+ep /path/to/hinatracer
+sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"   # 再起動まで有効
+sudo setcap cap_net_raw+ep /path/to/hinatracer              # または一度だけ設定
 ```
 
-### macOS Gatekeeper
+**macOS：初回起動。** アプリは Apple の署名を受けていないため、Gatekeeper にブロックされることがあります。`HinaTracer.app` を右クリックして **開く** を選ぶか、次を実行してください。
 
-未署名アプリは初回にブロックされることがあります。「システム設定 → プライバシーとセキュリティ」で許可するか、右クリック →「開く」。配布時は署名・公証を推奨。
+```bash
+xattr -dr com.apple.quarantine /Applications/HinaTracer.app
+```
 
 ## データファイル
 
-**設定**でパスを指定。欠落時は位置/地域/ASN が「—」。
+位置・地域・ASN の情報は 3 つの無料データファイルから取得します。**設定** の **すべてダウンロード/更新** をクリックすれば一度にまとめて取得できます（手元のファイルを指定することも可能）。データファイルがなくてもアプリは動作しますが、該当する列は「—」と表示されます。
 
-| データ | 入手先 | 備考 |
-|--------|--------|------|
-| **qqwry.ipdb** | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) | IPIP 形式（IPv4/IPv6） |
-| **Country.mmdb** | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip/releases) | 地域フラグ用 MaxMind DB |
-| **ip2asn-combined.tsv.gz** | [iptoasn.com](https://iptoasn.com/data/ip2asn-combined.tsv.gz) | ASN・組織・登録地域。**.gz をそのまま利用可**（`.tsv` も可） |
+| ファイル | 用途 | 提供元 |
+|----------|------|--------|
+| `qqwry.ipdb` | 位置 | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) |
+| `Country.mmdb` | 地域と旗アイコン | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
+| `ip2asn-combined.tsv.gz` | ASN・ネットワーク名・ASN の地域 | [iptoasn.com](https://iptoasn.com/) |
 
-## 言語パック
+これらのファイルは各プロジェクトが提供しており、それぞれのライセンスに従います。
 
-組み込み：簡体中国語、繁体字中国語、日本語、English。設定ですぐ切替。
+## 使い方のヒント
 
-初回起動（設定に `language` がない場合）は OS の UI 言語を検出し、最適なパックを選んで保存します。
+- **ターゲットの書式**：`example.com`、`1.1.1.1`、`2606:4700:4700::1111` は ICMP、`example.com:443`、`1.1.1.1:443`、`[2606:4700:4700::1111]:443` は TCP Ping になります。ポート付きの IPv6 アドレスは角括弧で囲んでください。
+- **一括インポート**（Ping 監視 → **一括インポート**）：1 行に 1 ターゲット。カンマの後に別名を付けられます：`host,alias` または `host:port,alias`。`#` で始まる行は無視されます。
+- **複数選択**：Ctrl+クリック（macOS では ⌘+クリック）で行を追加・解除、Shift+クリックで範囲選択、Ctrl+A / ⌘+A ですべて選択。複数選択時の右クリックメニューには、有効化 / 無効化 / 削除や Ping への追加など、選択したすべての行に使える操作だけが表示されます。
+- **詳細**：行をダブルクリックするか Enter キーで詳細ウィンドウを開きます。
+- **どこからでもルート追跡**：Ping のターゲットや IP 検索の結果を右クリックして追跡できます。TCP ターゲットはホストまでを追跡します。
 
-カスタム：`*.json` を `%APPDATA%\hinatracer\lang\`（または exe / `.app` 横の `lang\`）へ。キー一覧は `i18n/*.json`。
+## 設定とログ
 
-## ソースからビルド
+設定、ターゲット、追跡タブ、列のレイアウトは `config.json` に保存されます。アプリがクラッシュした場合は同じフォルダーに `crash.log` が書き出されます。
 
-Go **1.27.1+**（mygo v0.2.9；`GOTOOLCHAIN=go1.27.1` 可）。**CGO 不要**。
-
-```bash
-go tool mygo build
-go tool mygo build -platform windows/amd64
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -H windowsgui" -o build/hinatracer.exe .
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o build/hinatracer-debug.exe .
-go test ./... && go vet ./...
-```
-
-Windows のファイルアイコン用 `rsrc_windows_amd64.syso` はリポジトリに含まれ、`go build` で自動リンクされます。再生成：`go run scripts/mkicon.go -in <src.jpg>` の後 `bash scripts/genwinres.sh`。
-
-## 設定とクラッシュログ
-
-パス：`os.UserConfigDir()/hinatracer/config.json`
-
-| OS | 設定ディレクトリ |
-|----|------------------|
+| OS | フォルダー |
+|----|------------|
 | Windows | `%APPDATA%\hinatracer\` |
 | macOS | `~/Library/Application Support/hinatracer/` |
 | Linux | `~/.config/hinatracer/` |
 
-同じディレクトリの `crash.log` に UI/更新の panic を記録します。
+## カスタム言語パック
 
-GitHub Actions（`.github/workflows/build.yml`）は `v*` タグでテスト実行・mygo による Windows / Linux / macOS ビルドを行い、上記アーカイブを **draft** Release に `SHA256SUMS.txt` 付きで添付します。
+`*.json` の言語ファイルを、上記の設定フォルダー内の `lang` フォルダー、またはアプリ実行ファイルと同じ場所の `lang` フォルダーに置くと、**設定 → 言語** で選べるようになります。組み込みパックと同じ `code` を指定するとその文字列を上書きし、足りない文字列は英語で表示されます。[`i18n/`](i18n/) の組み込みパックをひな形にしてください。
+
+```json
+{
+  "name": "English",
+  "code": "en",
+  "strings": {
+    "nav.ping": "Ping Monitor"
+  }
+}
+```
+
+## ソースからビルド
+
+[`go.mod`](go.mod) に記載された Go のバージョンが必要です。CGO は不要です。
+
+```bash
+go build .                # 現在のプラットフォーム向けにビルド
+go tool mygo build        # パッケージ化したアプリを build/ に生成
+```
 
 ## ライセンス
 
-[PolyForm Noncommercial License 1.0.0](LICENSE) を採用しています。非営利目的の利用（個人・研究・非営利／教育など。詳細はライセンス本文）は許可されます。**商用利用は許可されません。** サードパーティのデータファイルおよび flagcdn 資産は各ライセンスに従います。
+[PolyForm Noncommercial License 1.0.0](LICENSE)：非商用であれば無料で利用できますが、商用利用は認められていません。サードパーティのデータファイルはそれぞれのライセンスに従います。

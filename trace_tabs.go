@@ -22,12 +22,13 @@ type traceTab struct {
 	Alias    string
 	MTR      bool
 	Interval float64
-	running atomic.Bool
+	running  atomic.Bool
 	Status   string
 	mu       sync.Mutex // guards Hops for session/UI cross-thread access
 	Hops     []traceHopView
 	Selected int
 	Table    ui.ListState
+	Sel      ui.Selection[int] // by TTL
 	Sort     ui.SortOrder
 	session  *trace.Session
 }
@@ -41,7 +42,6 @@ func (t *traceTab) title() string {
 	}
 	return i18n.T("trace.tab.new")
 }
-
 
 func (t *traceTab) isRunning() bool {
 	if t == nil {
@@ -89,7 +89,11 @@ func (a *app) newTraceTab() *traceTab {
 		Sort:     ui.SortOrder{Column: "ttl"},
 	}
 	t.Table.Selected = &t.Selected
+	t.Table.Selection = &t.Sel
 	t.Table.Sort = &t.Sort
+	if l, ok := a.cfg.TableLayouts["trace"]; ok {
+		t.Table.Columns = fromCfgLayout(l)
+	}
 	return t
 }
 
@@ -405,7 +409,7 @@ func (a *app) stopTrace() {
 }
 
 func (a *app) jumpToTrace(host string) {
-	host = strings.TrimSpace(host)
+	host = strings.TrimSpace(pinger.HostOnly(host))
 	if host == "" {
 		return
 	}
@@ -455,7 +459,6 @@ func (a *app) applyTraceInterval(tab *traceTab) {
 	}
 	a.persist()
 }
-
 
 func (a *app) openHopDetail(h traceHopView) {
 	snap := pinger.Snapshot{

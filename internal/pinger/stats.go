@@ -29,6 +29,15 @@ func (s Stats) SuccessRate() float64 {
 	return float64(s.Success) * 100 / float64(total)
 }
 
+// LossRate returns packet loss 0..100 (fail/(success+fail)).
+func (s Stats) LossRate() float64 {
+	total := s.Success + s.Failure
+	if total == 0 {
+		return 0
+	}
+	return float64(s.Failure) * 100 / float64(total)
+}
+
 // AddSuccess records a successful ping with latency in ms.
 func (s *Stats) AddSuccess(latencyMs float64, at time.Time) {
 	s.Success++

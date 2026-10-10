@@ -31,14 +31,14 @@ type Record struct {
 
 // DB is an in-memory sorted range table.
 type DB struct {
-	mu    sync.RWMutex
-	start [][16]byte
-	end   [][16]byte
-	asn   []uint32
-	iso   [][2]byte
-	org   []string // interned via orgIdx
+	mu     sync.RWMutex
+	start  [][16]byte
+	end    [][16]byte
+	asn    []uint32
+	iso    [][2]byte
+	org    []string // interned via orgIdx
 	orgIdx []uint32
-	path  string
+	path   string
 }
 
 // Open loads a TSV or .tsv.gz file (iptoasn format).

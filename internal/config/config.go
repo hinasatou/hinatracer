@@ -42,6 +42,12 @@ func (t TraceTab) IntervalOrDefault() float64 {
 	return t.Interval
 }
 
+// TableLayout is a persisted table column order and widths (DIPs) by column ID.
+type TableLayout struct {
+	Order  []string           `json:"order,omitempty"`
+	Widths map[string]float32 `json:"widths,omitempty"`
+}
+
 // Config is the on-disk application configuration.
 type Config struct {
 	IPDBPath      string       `json:"ipdbPath"`
@@ -57,9 +63,26 @@ type Config struct {
 	TraceActiveTab int        `json:"traceActiveTab,omitempty"`
 	AutoStartTrace bool       `json:"autoStartTrace,omitempty"`
 
+	// Update checker: check on start (default true), channel "stable"
+	// (default) or "prerelease", and a version the user chose to skip.
+	UpdateCheckOnStart *bool  `json:"updateCheckOnStart,omitempty"`
+	UpdateChannel      string `json:"updateChannel,omitempty"`
+	UpdateSkipVersion  string `json:"updateSkipVersion,omitempty"`
+
+	// TableLayouts keeps user column order/widths per table ("ping", "trace", "lookup").
+	TableLayouts map[string]TableLayout `json:"tableLayouts,omitempty"`
+
 	// Deprecated: migrated into IPDBPath.
 	QQWryPath string `json:"qqwryPath,omitempty"`
 }
+
+// CheckUpdatesOnStart reports whether to check for updates at launch (default true).
+func (c Config) CheckUpdatesOnStart() bool {
+	return c.UpdateCheckOnStart == nil || *c.UpdateCheckOnStart
+}
+
+// IncludePrereleases reports the "include pre-releases" channel.
+func (c Config) IncludePrereleases() bool { return c.UpdateChannel == "prerelease" }
 
 // Default returns a config with sensible defaults.
 func Default() Config {

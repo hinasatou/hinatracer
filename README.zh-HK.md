@@ -1,97 +1,104 @@
-[English](README.md) | [简体中文](README.zh-CN.md) | 繁體中文 | [日本語](README.ja.md)
+[English](README.md) | [中文(简体)](README.zh-CN.md) | 中文(繁體) | [日本語](README.ja.md)
 
 # HinaTracer
 
-<img src="resources/icon.png" width="64" height="64" alt="HinaTracer 圖示" />
+<img src="resources/icon.png" width="96" height="96" alt="HinaTracer 圖示" />
 
-跨平台原生桌面網絡診斷工具：**Ping 監測**、**路由追蹤**（MTR）與 **IP 查詢**，建基於 [mygo](https://github.com/egoist/mygo) v0.2.9。結合 **qqwry.ipdb**（ipip 格式）、Loyalsoldier GeoIP 地區旗幟（內嵌 flagcdn PNG，emoji 回退）與 **iptoasn ASN**（編號、組織、註冊地區）標註跳點/主機。支援 **IPv4 / IPv6**。
+適用於 Windows、macOS 與 Linux 的原生桌面網路工具：持續 Ping（ICMP / TCP）、路由追蹤 / MTR 與 IP 查詢，每個位址都附帶位置、地區與 ASN 資訊。
 
 ## 功能
 
-1. **Ping 監測**（預設頁）— 按間隔持續探測；統計成功/失敗、成功率、延遲分位數與時間戳。表格含別名、主機、rDNS、位置、地區、ASN。支援批量匯入（每行 `host` 或 `host,alias`）、單目標啟用/停用；右鍵複製/改別名/啟用停用/詳情/查 traceroute/刪除；雙擊開啟詳情。
-2. **路由追蹤** — 左側 Chrome 風格垂直頁籤（狀態點、標題、關閉、右鍵選單、可調寬度）。預設 **MTR**：發現路徑後按間隔持續探測每一跳；可改為單次 traceroute。多頁籤並發。支援**全部開始 / 全部停止**。跳點表列與 Ping 對齊。右鍵可複製、查看跳點詳情、將 IP 加到 Ping。
-3. **IP 查詢** — 輸入 IP（v4/v6）或域名（可批量，每行一條）。域名非同步解析全部 A/AAAA；每個 IP 顯示 rDNS、位置、地區+旗幟、ASN 與 ASN 地區。右鍵可複製、新增 IP/域名到 Ping、開啟 Traceroute。
-4. **設定** — 語言（簡體中文/繁體中文/日本語/English，可載入自訂包）、主題、資料檔路徑、**一鍵下載/更新**三份資料檔（原子替換並熱載入）、啟動時自動監測。
-5. **關於** — 應用名稱、版本與 GitHub 連結。
-6. **設定檔與崩潰日誌** — 見下文。
+- **Ping 監測**：同時監測多個目標，即時顯示成功率、丟包率，以及最近 / 平均 / 最小 / 最大 / 中位延遲。可個別啟用或停用、設定別名、檢視詳情，支援逐一新增或批次匯入。
+- **TCP Ping**：為目標加上連接埠（如 `example.com:443`），即改為測量 TCP 連線耗時，而非傳送 ICMP。
+- **路由追蹤 / MTR**：每個追蹤各佔一個分頁。MTR 模式持續探測每一跳，可一鍵全部開始或停止，任一跳點都能一鍵加入 Ping 監測。
+- **IP 查詢**：輸入 IP 或網域（每行一筆），網域會解析出全部 IPv4 / IPv6 位址，並對每個位址快速測一次延遲。
+- **地區與 ASN 資訊**：每個位址顯示位置、地區（附旗幟）、ASN / 網路名稱及 ASN 註冊地區，支援 IPv4 與 IPv6。
+- **好用的表格**：任意欄位排序，可調整欄寬與順序（重新啟動後保留），支援多選並以右鍵批次操作。
+- **檢查更新**：可於啟動時檢查 GitHub Releases（僅正式版，或包含預覽版），並可自動下載、驗證與安裝新版本。
+- **語言與主題**：中文(简体)、中文(繁體)、日本語、English，並支援自訂語言包；淺色、深色或跟隨系統。
 
 ## 下載
 
-預編譯包見 **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)**（先以草稿建立，需手動發佈）。標籤 `vX.Y.Z` 常見產物：
+請前往 **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)** 下載最新版本。
 
-| 檔案 | 內容 |
-|------|------|
-| `HinaTracer-vX.Y.Z-windows-amd64.zip` | `HinaTracer.exe`（GUI）、`LICENSE`、`README.md` |
-| `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | 二進位、`.desktop`、圖示、`LICENSE`、`README.md` |
-| `HinaTracer-vX.Y.Z-linux-amd64.deb` | mygo 產生的 deb |
-| `HinaTracer-vX.Y.Z-macos-arm64.zip` / `…-macos-amd64.zip` | `HinaTracer.app` 以及 `LICENSE`、`README.md` |
-| `SHA256SUMS.txt` | 上述檔案的 SHA-256 校驗和 |
-
-## 平台
-
-| 平台 | 說明 | ICMP |
+| 平台 | 檔案 | 說明 |
 |------|------|------|
-| **Windows 10/11** x64 | 無需 WebView2 / CGO | `IcmpSendEcho` / `Icmp6SendEcho2`（一般無需管理員） |
-| **macOS** 12+（amd64 / arm64） | 原生 UI | 優先無特權 ICMP datagram；特權時 raw；回退 `ping` |
-| **Linux** amd64 | 原生 UI（無強制 GTK） | 同上。無特權 ICMP 需 `net.ipv4.ping_group_range` 允許目前使用者 |
+| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64-setup.exe` | 安裝程式（建議），為目前使用者安裝，毋須系統管理員權限 |
+| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64.zip` | 免安裝版，解壓後執行 `HinaTracer.exe` |
+| macOS (Apple 晶片) | `HinaTracer-vX.Y.Z-macos-arm64.zip` | 內含 `HinaTracer.app` |
+| macOS (Intel) | `HinaTracer-vX.Y.Z-macos-amd64.zip` | 內含 `HinaTracer.app` |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.deb` | 適用於 Debian / Ubuntu 及其衍生版 |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | 免安裝執行檔，附桌面項目與圖示 |
+| 全部 | `SHA256SUMS.txt` | 用於驗證下載檔案 |
 
-### Linux ping 權限
+## 平台說明
+
+**Linux：Ping 權限。** 若 Ping 因權限失敗，可允許非特權 ICMP，或為程式授予原始通訊端權限：
 
 ```bash
-sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
-sudo setcap cap_net_raw+ep /path/to/hinatracer
+sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"   # 重新開機前有效
+sudo setcap cap_net_raw+ep /path/to/hinatracer              # 或一次性設定
 ```
 
-### macOS Gatekeeper
+**macOS：首次開啟。** 應用程式未經 Apple 簽署，可能被 Gatekeeper 阻擋。在 `HinaTracer.app` 上按右鍵選擇 **打開**，或執行：
 
-未簽名應用首次開啟可能被攔截：在「系統設定 → 隱私權與安全性」中允許，或右鍵「打開」。正式發佈建議簽名與公證。
+```bash
+xattr -dr com.apple.quarantine /Applications/HinaTracer.app
+```
 
 ## 資料檔
 
-在**設定**中指定路徑。缺失時位置/地區/ASN 顯示為「—」。
+位置、地區與 ASN 資訊來自三份免費資料檔。在 **設定** 中按 **下載/更新全部** 即可一次取得（也可以指定既有檔案）。缺少資料檔時程式照常運作，只是相關欄位顯示「—」。
 
-| 資料 | 來源 | 說明 |
+| 檔案 | 用途 | 來源 |
 |------|------|------|
-| **qqwry.ipdb** | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) | ipip 格式（IPv4/IPv6）。CDN：`https://cdn.bili33.top/gh/nmgliangwei/qqwry.ipdb@main/qqwry.ipdb` |
-| **Country.mmdb** | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip/releases) | MaxMind 地區庫（地區旗幟）。CDN：`https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/Country.mmdb` |
-| **ip2asn-combined.tsv.gz** | [iptoasn.com](https://iptoasn.com/data/ip2asn-combined.tsv.gz) | ASN 號、組織、註冊地區（IPv4+IPv6）。**.gz 可直接使用**；亦支援未壓縮 `.tsv` |
+| `qqwry.ipdb` | 位置 | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) |
+| `Country.mmdb` | 地區與旗幟 | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
+| `ip2asn-combined.tsv.gz` | ASN、網路名稱與 ASN 地區 | [iptoasn.com](https://iptoasn.com/) |
 
-## 語言包
+這些檔案由各自的專案提供，並受其各自的授權條款約束。
 
-內建：簡體中文、繁體中文、日本語、English。設定中切換即時生效。
+## 使用提示
 
-首次執行（設定檔沒有 `language` 欄位）會按作業系統介面語言自動配對語言包並寫入設定。
+- **目標格式**：`example.com`、`1.1.1.1`、`2606:4700:4700::1111` 使用 ICMP；`example.com:443`、`1.1.1.1:443`、`[2606:4700:4700::1111]:443` 使用 TCP Ping。帶連接埠的 IPv6 位址須加方括號。
+- **批次匯入**（Ping 監測 → **批次匯入**）：每行一個目標，可在逗號後加別名：`host,alias` 或 `host:port,alias`。以 `#` 開頭的行會被略過。
+- **多選**：Ctrl+點擊（macOS 為 ⌘+點擊）加入或取消一列，Shift+點擊選取一段範圍，Ctrl+A / ⌘+A 全選。多選時右鍵選單只顯示適用於全部所選列的操作，例如啟用 / 停用 / 刪除或新增到 Ping。
+- **詳情**：按兩下某列或按 Enter 開啟詳情視窗。
+- **隨處發起追蹤**：在 Ping 目標或 IP 查詢結果上按右鍵即可追蹤；TCP 目標會追蹤到對應主機。
 
-自訂：將 `*.json` 放入 `%APPDATA%\hinatracer\lang\`（或 exe / `.app` 旁的 `lang\`）。完整 key 見 `i18n/*.json`。
+## 設定與日誌
 
-## 從原始碼建置
+設定、目標、追蹤分頁與欄位配置儲存在 `config.json`。程式當機時會在同一資料夾寫入 `crash.log`。
 
-需要 Go **1.27.1+**（mygo v0.2.9；可用 `GOTOOLCHAIN=go1.27.1`）。**無需 CGO**，可交叉編譯。
-
-```bash
-go tool mygo build
-go tool mygo build -platform windows/amd64
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -H windowsgui" -o build/hinatracer.exe .
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o build/hinatracer-debug.exe .
-go test ./... && go vet ./...
-```
-
-Windows 檔案圖示：倉庫已提交 `rsrc_windows_amd64.syso`，`go build` 會自動連結。再生：`go run scripts/mkicon.go -in <src.jpg>` 後 `bash scripts/genwinres.sh`。
-
-## 設定檔與崩潰日誌
-
-路徑：`os.UserConfigDir()/hinatracer/config.json`
-
-| 系統 | 設定目錄 |
-|------|----------|
+| 系統 | 資料夾 |
+|------|--------|
 | Windows | `%APPDATA%\hinatracer\` |
 | macOS | `~/Library/Application Support/hinatracer/` |
 | Linux | `~/.config/hinatracer/` |
 
-同目錄下的 `crash.log` 記錄介面/更新相關 panic，方便排查。
+## 自訂語言包
 
-GitHub Actions（`.github/workflows/build.yml`）在 `v*` 標籤上跑測試、用 mygo 建置 Windows / Linux / macOS，打包上述產物，並以**草稿** Release 附帶 `SHA256SUMS.txt`。
+將 `*.json` 語言檔放入上述設定資料夾下的 `lang` 資料夾，或程式所在位置的 `lang` 資料夾，即可在 **設定 → 語言** 中選擇。與內建語言包 `code` 相同時會覆蓋對應文字，缺少的文字會改用英文。可參考 [`i18n/`](i18n/) 中的內建語言包：
+
+```json
+{
+  "name": "English",
+  "code": "en",
+  "strings": {
+    "nav.ping": "Ping Monitor"
+  }
+}
+```
+
+## 從原始碼建置
+
+需要 [`go.mod`](go.mod) 中標示的 Go 版本，毋須 CGO。
+
+```bash
+go build .                # 為目前平台建置
+go tool mygo build        # 在 build/ 中產生封裝好的應用程式
+```
 
 ## 授權條款
 
-採用 [PolyForm Noncommercial License 1.0.0](LICENSE)。允許非商業用途（個人、研究、非營利/教育等，以授權條款正文為準）。**禁止商業用途。** 第三方資料檔與 flagcdn 資源仍遵循其各自授權。
+[PolyForm Noncommercial License 1.0.0](LICENSE)：可免費用於非商業用途，不允許商業使用。第三方資料檔受其各自的授權條款約束。

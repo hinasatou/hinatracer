@@ -5,6 +5,8 @@ import (
 	"net"
 	"strings"
 	"unicode"
+
+	"hinatracer/internal/pinger"
 )
 
 // Kind classifies a single query line.
@@ -22,6 +24,7 @@ type Query struct {
 	Kind   Kind
 	IP     net.IP // set when KindIP
 	Domain string // set when KindDomain (no trailing dot)
+	Port   int    // >0 when the line was host:port (TCP ping)
 }
 
 // ClassifyLine trims a line and classifies it as IP, domain, or invalid.
@@ -33,6 +36,15 @@ func ClassifyLine(line string) Query {
 		return Query{Kind: KindInvalid}
 	}
 	q := Query{Raw: line}
+	if pt := pinger.ParseTarget(line); pt.Port > 0 {
+		sub := ClassifyLine(pt.Host)
+		if sub.Kind == KindInvalid {
+			return q
+		}
+		sub.Raw = line
+		sub.Port = pt.Port
+		return sub
+	}
 
 	// Strip surrounding brackets for IPv6 literals.
 	s := line
@@ -57,7 +69,7 @@ func ClassifyLine(line string) Query {
 		return q
 	}
 
-	dom := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(line)), ".")
+	dom := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(s)), ".")
 	if isDomain(dom) {
 		q.Kind = KindDomain
 		q.Domain = dom

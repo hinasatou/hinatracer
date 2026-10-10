@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"hinatracer/internal/crashlog"
-	"hinatracer/internal/icmpx"
 )
 
 // Target is a live ping target with stats.
@@ -16,6 +15,7 @@ type Target struct {
 	Alias   string
 	Enabled bool
 	Stats   Stats
+	LastErr string
 }
 
 // Snapshot is a UI-safe copy of a target.
@@ -27,6 +27,7 @@ type Snapshot struct {
 	Stats   Stats
 	Running bool
 	LastErr string
+	Proto   Proto
 }
 
 // Manager periodically pings a list of targets.
@@ -175,6 +176,8 @@ func (m *Manager) Snapshots() []Snapshot {
 			Enabled: t.Enabled,
 			Stats:   st,
 			Running: m.running,
+			LastErr: t.LastErr,
+			Proto:   ProtoOf(t.Host),
 		}
 	}
 	return out
@@ -279,7 +282,7 @@ func (m *Manager) pingAll() {
 					}
 				}
 			}()
-			res := icmpx.Ping(t.Host, 0, timeout)
+			res := Probe(t.Host, timeout)
 			now := time.Now()
 			m.mu.Lock()
 			defer m.mu.Unlock()
@@ -295,10 +298,16 @@ func (m *Manager) pingAll() {
 			if !found {
 				return
 			}
-			if res.Timeout || res.Err != nil {
+			if !res.OK {
 				t.Stats.AddFailure(now)
+				if res.Err != nil {
+					t.LastErr = res.Err.Error()
+				} else {
+					t.LastErr = "timeout"
+				}
 			} else {
 				t.Stats.AddSuccess(float64(res.RTT)/float64(time.Millisecond), now)
+				t.LastErr = ""
 			}
 		}(t)
 	}

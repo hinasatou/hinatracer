@@ -33,7 +33,6 @@ func freshApp(t *testing.T) *app {
 	return newApp()
 }
 
-
 func TestViewSmoke(t *testing.T) {
 	a := newApp()
 	a.activeTrace().Host = "1.1.1.1"
@@ -214,8 +213,8 @@ func TestAppVersionConst(t *testing.T) {
 	if strings.Contains(appVersion, "4") {
 		t.Fatalf("appVersion must not contain digit 4: %q", appVersion)
 	}
-	if appVersion != "0.6.3" {
-		t.Fatalf("expected 0.6.3 got %q", appVersion)
+	if appVersion != "1.1.0" {
+		t.Fatalf("expected 1.1.0 got %q", appVersion)
 	}
 	if appRepoURL != "https://github.com/hinasatou/hinatracer" {
 		t.Fatalf("unexpected repo %q", appRepoURL)
@@ -282,7 +281,6 @@ func TestEnableDisable(t *testing.T) {
 		}
 	}
 }
-
 
 func TestTraceTabPersistenceRoundTrip(t *testing.T) {
 	a := freshApp(t)
