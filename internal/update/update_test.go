@@ -169,8 +169,16 @@ func TestDetect(t *testing.T) {
 		t.Fatal("bundle")
 	}
 	s := SetupScript(`C:\T\it's setup.exe`, `C:\P\HinaTracer.exe`, 7)
-	if !strings.Contains(s, `'C:\T\it''s setup.exe'`) || !strings.Contains(s, "'/S'") {
+	if !strings.Contains(s, `'C:\T\it''s setup.exe'`) || !strings.Contains(s, `'/S /D=C:\P'`) {
 		t.Fatal(s)
+	}
+	s = SetupScript(`C:\T\setup.exe`, `F:\Green Software\HinaTracer\HinaTracer.exe`, 7)
+	if !strings.Contains(s, `-ArgumentList '/S /D=F:\Green Software\HinaTracer'`) ||
+		!strings.Contains(s, `-FilePath 'F:\Green Software\HinaTracer\HinaTracer.exe'`) {
+		t.Fatal(s)
+	}
+	if got := winDir(`D:\HinaTracer.exe`); got != `D:\` {
+		t.Fatalf("root dir: %q", got)
 	}
 }
 

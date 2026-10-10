@@ -158,9 +158,26 @@ func Run(ctx context.Context, c *http.Client, rel Release, plan Plan, workDir st
 func PSQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
 // SetupScript is the PowerShell helper that waits for the app to exit,
-// runs the NSIS installer silently (/S), and starts the updated app.
+// runs the NSIS installer silently (/S) into the folder the app currently
+// lives in (/D=, which NSIS requires last and unquoted), and starts the
+// updated app from that same folder.
 func SetupScript(setup, exe string, pid int) string {
+	args := "/S /D=" + winDir(exe)
 	return fmt.Sprintf("Wait-Process -Id %d -Timeout 60 -ErrorAction SilentlyContinue; "+
-		"Start-Process -Wait -FilePath %s -ArgumentList '/S'; Start-Process -FilePath %s",
-		pid, PSQuote(setup), PSQuote(exe))
+		"Start-Process -Wait -WindowStyle Hidden -FilePath %s -ArgumentList %s; Start-Process -FilePath %s",
+		pid, PSQuote(setup), PSQuote(args), PSQuote(exe))
+}
+
+// winDir returns the directory part of a Windows path without a trailing
+// separator, independent of the host OS (so it is testable everywhere).
+func winDir(p string) string {
+	i := strings.LastIndexAny(p, `\/`)
+	if i <= 0 {
+		return p
+	}
+	d := p[:i]
+	if len(d) == 2 && d[1] == ':' {
+		d += `\`
+	}
+	return d
 }

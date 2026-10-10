@@ -214,7 +214,8 @@ func relaunchAfterUpdate(out update.Outcome, exe string) error {
 	switch out.Action {
 	case "setup":
 		script := update.SetupScript(out.Launch, exe, os.Getpid())
-		cmd := exec.Command("powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
+		cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script)
+		hideConsole(cmd)
 		return cmd.Start()
 	case "relaunch":
 		if runtime.GOOS == "darwin" {
