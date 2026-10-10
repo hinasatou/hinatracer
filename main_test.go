@@ -213,8 +213,8 @@ func TestAppVersionConst(t *testing.T) {
 	if strings.Contains(appVersion, "4") {
 		t.Fatalf("appVersion must not contain digit 4: %q", appVersion)
 	}
-	if appVersion != "1.1.0" {
-		t.Fatalf("expected 1.1.0 got %q", appVersion)
+	if appVersion != "1.1.1" {
+		t.Fatalf("expected 1.1.1 got %q", appVersion)
 	}
 	if appRepoURL != "https://github.com/hinasatou/hinatracer" {
 		t.Fatalf("unexpected repo %q", appRepoURL)

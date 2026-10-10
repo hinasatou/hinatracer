@@ -14,15 +14,15 @@ import (
 )
 
 const (
-	appVersion = "1.1.0"
+	appVersion = "1.1.1"
 
 	// Default window sizes (a saved window-state.json overrides them).
 	mainWinW      = 1460
 	mainWinH      = 980
 	detailWinW    = 690
-	detailWinH    = 690
+	detailWinH    = 750
 	detailWinMinW = 560
-	detailWinMinH = 600
+	detailWinMinH = 660
 	appRepoURL    = "https://github.com/hinasatou/hinatracer"
 	contentMinH   = float32(200)
 	pageTableMinH = float32(280)

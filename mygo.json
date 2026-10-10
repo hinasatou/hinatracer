@@ -1,7 +1,7 @@
 {
   "name": "HinaTracer",
   "identifier": "com.hinasatou.hinatracer",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "out": "build",
   "icon": "resources/icon.png"
 }
