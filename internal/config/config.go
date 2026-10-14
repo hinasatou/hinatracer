@@ -3,6 +3,7 @@ package config
 
 import (
 	"encoding/json"
+	"hinatracer/internal/httpmon"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,15 @@ func (t TraceTab) IntervalOrDefault() float64 {
 	return t.Interval
 }
 
+// WebToken is a named API token. Role is "admin" or "guest".
+type WebToken struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Role    string `json:"role"`
+	Hash    string `json:"hash"`
+	Created int64  `json:"created"` // unix seconds
+}
+
 // TableLayout is a persisted table column order and widths (DIPs) by column ID.
 type TableLayout struct {
 	Order  []string           `json:"order,omitempty"`
@@ -72,9 +82,49 @@ type Config struct {
 	// TableLayouts keeps user column order/widths per table ("ping", "trace", "lookup").
 	TableLayouts map[string]TableLayout `json:"tableLayouts,omitempty"`
 
+	// WebUI: bind host/port, auto-start with the app, and the salted
+	// password hash ("" = no password; then only loopback binds work).
+	WebHost         string `json:"webHost,omitempty"`
+	WebPort         int    `json:"webPort,omitempty"`
+	WebAutoStart    bool   `json:"webAutoStart,omitempty"`
+	WebPasswordHash string `json:"webPasswordHash,omitempty"`
+	// WebGuest allows passwordless read-only guest login (needs a password).
+	WebGuest bool `json:"webGuest,omitempty"`
+	// WebTokens are API tokens for MCP and the command line; only SHA-256
+	// hashes are stored.
+	WebTokens []WebToken `json:"webTokens,omitempty"`
+
+	// PingHistorySave writes probe samples to SQLite under the config dir.
+	PingHistorySave bool `json:"pingHistorySave,omitempty"`
+	// PingHistoryDays is how many days of history to keep (default 90).
+	PingHistoryDays int `json:"pingHistoryDays,omitempty"`
+
+	// HTTPTargets are the HTTP monitor targets; AutoStartHTTP starts
+	// checking at launch.
+	HTTPTargets   []HTTPTarget `json:"httpTargets,omitempty"`
+	AutoStartHTTP bool         `json:"autoStartHttp,omitempty"`
+
+	// Remote data source: the GUI shows a remote WebUI instead of running
+	// locally. RemoteToken is an API token (or session) obtained at
+	// sign-in; a password is never stored. RemoteGuest = guest login.
+	RemoteMode  bool   `json:"remoteMode,omitempty"`
+	RemoteURL   string `json:"remoteUrl,omitempty"`
+	RemoteToken string `json:"remoteToken,omitempty"`
+	RemoteGuest bool   `json:"remoteGuest,omitempty"`
+
 	// Deprecated: migrated into IPDBPath.
 	QQWryPath string `json:"qqwryPath,omitempty"`
 }
+
+// HTTPTarget is one HTTP monitor target.
+type HTTPTarget struct {
+	Alias   string `json:"alias,omitempty"`
+	Enabled *bool  `json:"enabled,omitempty"`
+	httpmon.Spec
+}
+
+// IsEnabled defaults to true.
+func (t HTTPTarget) IsEnabled() bool { return t.Enabled == nil || *t.Enabled }
 
 // CheckUpdatesOnStart reports whether to check for updates at launch (default true).
 func (c Config) CheckUpdatesOnStart() bool {
@@ -119,6 +169,8 @@ func (s *Store) Get() Config {
 	c := s.cfg
 	c.PingTargets = append([]PingTarget(nil), s.cfg.PingTargets...)
 	c.TraceTabs = append([]TraceTab(nil), s.cfg.TraceTabs...)
+	c.WebTokens = append([]WebToken(nil), s.cfg.WebTokens...)
+	c.HTTPTargets = append([]HTTPTarget(nil), s.cfg.HTTPTargets...)
 	return c
 }
 
@@ -204,7 +256,7 @@ func migrate(c Config) Config {
 }
 
 func (s *Store) saveLocked() error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
 	out := s.cfg
@@ -214,16 +266,38 @@ func (s *Store) saveLocked() error {
 		return err
 	}
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// 0600: the file holds the password hash and API token hashes.
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
+	_ = os.Chmod(tmp, 0o600)
 	return os.Rename(tmp, s.path)
+}
+
+// OverridePath is set by --config; it wins over HINATRACER_CONFIG and the
+// per-user location.
+var OverridePath string
+
+// DataDir is where downloaded databases and history live:
+// HINATRACER_DATA_DIR when set (the server package uses /var/lib/hinatracer),
+// else the folder of the config file.
+func DataDir() string {
+	if d := os.Getenv("HINATRACER_DATA_DIR"); d != "" {
+		return d
+	}
+	return filepath.Dir(ResolvePath())
 }
 
 // ResolvePath chooses <UserConfigDir>/hinatracer/config.json
 // (Windows: %APPDATA%\hinatracer; macOS: ~/Library/Application Support/hinatracer;
 // Linux: ~/.config/hinatracer), with fallback next to the executable.
 func ResolvePath() string {
+	if OverridePath != "" {
+		return OverridePath
+	}
+	if p := os.Getenv("HINATRACER_CONFIG"); p != "" {
+		return p
+	}
 	if dir, err := os.UserConfigDir(); err == nil && dir != "" {
 		return filepath.Join(dir, "hinatracer", "config.json")
 	}

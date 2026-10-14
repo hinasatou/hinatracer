@@ -18,6 +18,48 @@ type Stats struct {
 	Median    float64
 	LastOK    time.Time
 	LastFail  time.Time
+	// History is the most recent probes in order (at most HistoryCap):
+	// latency in ms, or HistoryLost for a failed probe. Charts use it.
+	History []float64
+
+	// Carried over from before a restart (see Restore): successful probes
+	// not in Latencies, with their sum, min and max.
+	baseN            int
+	baseSum          float64
+	baseMin, baseMax float64
+}
+
+// Restore sets cumulative stats saved before a restart. recent are the
+// latest successful latencies (they become Latencies; the median comes
+// from them), hist the recent probes for the charts.
+func (s *Stats) Restore(success, failure int, sum, minv, maxv, last float64, lastOK, lastFail time.Time, recent, hist []float64) {
+	*s = Stats{Success: success, Failure: failure, Last: last, LastOK: lastOK, LastFail: lastFail,
+		Latencies: append([]float64(nil), recent...), History: append([]float64(nil), hist...)}
+	if len(s.Latencies) > success {
+		s.Latencies = s.Latencies[len(s.Latencies)-success:]
+	}
+	rs := 0.0
+	for _, v := range s.Latencies {
+		rs += v
+	}
+	s.baseN, s.baseSum, s.baseMin, s.baseMax = success-len(s.Latencies), sum-rs, minv, maxv
+	s.recompute()
+}
+
+// Sum is the total of all successful latencies (ms).
+func (s Stats) Sum() float64 { return s.Avg * float64(s.baseN+len(s.Latencies)) }
+
+// HistoryCap bounds Stats.History.
+const HistoryCap = 300
+
+// HistoryLost marks a failed probe in Stats.History.
+const HistoryLost = -1.0
+
+func (s *Stats) pushHistory(v float64) {
+	s.History = append(s.History, v)
+	if n := len(s.History); n > HistoryCap {
+		s.History = append(s.History[:0:0], s.History[n-HistoryCap:]...)
+	}
 }
 
 // SuccessRate returns 0..100.
@@ -44,6 +86,7 @@ func (s *Stats) AddSuccess(latencyMs float64, at time.Time) {
 	s.Last = latencyMs
 	s.LastOK = at
 	s.Latencies = append(s.Latencies, latencyMs)
+	s.pushHistory(latencyMs)
 	s.recompute()
 }
 
@@ -51,16 +94,20 @@ func (s *Stats) AddSuccess(latencyMs float64, at time.Time) {
 func (s *Stats) AddFailure(at time.Time) {
 	s.Failure++
 	s.LastFail = at
+	s.pushHistory(HistoryLost)
 }
 
 func (s *Stats) recompute() {
-	if len(s.Latencies) == 0 {
+	if len(s.Latencies) == 0 && s.baseN == 0 {
 		s.Max, s.Min, s.Avg, s.Median = 0, 0, 0, 0
 		return
 	}
-	sum := 0.0
-	s.Min = s.Latencies[0]
-	s.Max = s.Latencies[0]
+	sum := s.baseSum
+	if s.baseN > 0 {
+		s.Min, s.Max = s.baseMin, s.baseMax
+	} else {
+		s.Min, s.Max = s.Latencies[0], s.Latencies[0]
+	}
 	for _, v := range s.Latencies {
 		sum += v
 		if v < s.Min {
@@ -70,7 +117,7 @@ func (s *Stats) recompute() {
 			s.Max = v
 		}
 	}
-	s.Avg = sum / float64(len(s.Latencies))
+	s.Avg = sum / float64(s.baseN+len(s.Latencies))
 	s.Median = Median(s.Latencies)
 }
 

@@ -81,6 +81,10 @@ func (a *app) initTraceTabs() {
 func (a *app) newTraceTab() *traceTab {
 	id := a.nextTraceID
 	a.nextTraceID++
+	if a.remote != nil { // remote mode: temporary until the server's id
+		a.rmir.tmpTab--
+		id = a.rmir.tmpTab
+	}
 	t := &traceTab{
 		ID:       id,
 		MTR:      true,
@@ -98,6 +102,9 @@ func (a *app) newTraceTab() *traceTab {
 }
 
 func (a *app) addTraceTabEmpty() *traceTab {
+	if a.remote != nil && !a.readOnly() {
+		a.remote.Enqueue("/api/trace/new", nil, nil)
+	}
 	t := a.newTraceTab()
 	a.traceTabs = append(a.traceTabs, t)
 	a.traceActive = len(a.traceTabs) - 1
@@ -141,6 +148,16 @@ func (a *app) closeTraceTab(idx int) {
 		return
 	}
 	tab := a.traceTabs[idx]
+	if a.remote != nil {
+		a.remoteTraceOp("/api/trace/close", tab, nil)
+		tab.setRunning(false)
+		a.traceTabs = append(a.traceTabs[:idx], a.traceTabs[idx+1:]...)
+		if len(a.traceTabs) == 0 { // the server opens a new empty tab too
+			a.traceTabs = []*traceTab{a.newTraceTab()}
+		}
+		a.traceActive = max(0, min(a.traceActive, len(a.traceTabs)-1))
+		return
+	}
 	a.stopTraceTab(tab)
 	if tab.session != nil {
 		tab.session.SetOnUpdate(nil)
@@ -168,6 +185,11 @@ func (a *app) closeOtherTraceTabs(keepIdx int) {
 		return
 	}
 	keep := a.traceTabs[keepIdx]
+	if a.remote != nil {
+		a.remoteTraceOp("/api/trace/closeothers", keep, nil)
+		a.traceTabs, a.traceActive = []*traceTab{keep}, 0
+		return
+	}
 	for i, t := range a.traceTabs {
 		if i == keepIdx {
 			continue
@@ -189,6 +211,7 @@ func (a *app) duplicateTraceTab(idx int) {
 		return
 	}
 	src := a.traceTabs[idx]
+	a.remoteTraceOp("/api/trace/duplicate", src, nil)
 	tab := a.newTraceTab()
 	tab.Host = src.Host
 	tab.Alias = src.Alias
@@ -210,6 +233,7 @@ func (a *app) moveTraceTab(from, to int) {
 	if to > from {
 		to--
 	}
+	a.remoteTraceOp("/api/trace/move", tab, map[string]any{"to": to})
 	a.traceTabs = append(a.traceTabs[:to], append([]*traceTab{tab}, a.traceTabs[to:]...)...)
 	a.traceActive = to
 	a.persist()
@@ -217,6 +241,12 @@ func (a *app) moveTraceTab(from, to int) {
 
 func (a *app) stopTraceTab(tab *traceTab) {
 	if tab == nil {
+		return
+	}
+	if a.remote != nil {
+		if tab.isRunning() {
+			a.remoteTraceStop(tab)
+		}
 		return
 	}
 	if tab.session != nil {
@@ -239,6 +269,10 @@ func (a *app) startTraceTab(tab *traceTab) {
 	if host == "" || tab.isRunning() {
 		return
 	}
+	if a.remote != nil {
+		a.remoteTraceStart(tab)
+		return
+	}
 	a.stopTraceTab(tab)
 	if tab.Interval < 0.2 {
 		tab.Interval = 0.2
@@ -252,6 +286,12 @@ func (a *app) startTraceTab(tab *traceTab) {
 	tab.Hops = nil
 	tab.Selected = -1
 	tab.Status = i18n.Tf("trace.status.running", host)
+	tabID, h := tab.ID, a.hist
+	sess.SetOnSample(func(ttl int, addr string, at time.Time, ms float64) {
+		if h != nil {
+			h.Add(histKeyHop(tabID, ttl), at, ms)
+		}
+	})
 	sess.SetOnUpdate(func() {
 		defer recoverAndLog("trace.onUpdate", false)
 		a.applySessionToTab(tab)
@@ -418,6 +458,12 @@ func (a *app) jumpToTrace(host string) {
 		a.detailWin.Close()
 		a.detailWin = nil
 	}
+	if a.remote != nil {
+		// the server finds or opens the tab and starts it; follow it
+		a.remote.Enqueue("/api/ping/trace", map[string]any{"hosts": []string{host}}, nil)
+		a.rmir.active = 0
+		return
+	}
 	if idx, ok := a.findTraceTabByHost(host); ok {
 		a.traceActive = idx
 		tab := a.traceTabs[idx]
@@ -517,6 +563,15 @@ func traceTabsCanStopAll(tabs []*traceTab) bool {
 }
 
 func (a *app) startAllTraces() {
+	if a.remote != nil {
+		a.remote.Enqueue("/api/trace/startall", nil, nil)
+		for _, t := range a.traceTabs {
+			if strings.TrimSpace(t.Host) != "" {
+				t.setRunning(true)
+			}
+		}
+		return
+	}
 	for _, t := range a.traceTabs {
 		if t != nil && !t.isRunning() && strings.TrimSpace(t.Host) != "" {
 			a.startTraceTab(t)
@@ -525,6 +580,13 @@ func (a *app) startAllTraces() {
 }
 
 func (a *app) stopAllTraceTabs() {
+	if a.remote != nil {
+		a.remote.Enqueue("/api/trace/stopall", nil, nil)
+		for _, t := range a.traceTabs {
+			t.setRunning(false)
+		}
+		return
+	}
 	for _, t := range a.traceTabs {
 		if t == nil {
 			continue
@@ -534,4 +596,34 @@ func (a *app) stopAllTraceTabs() {
 			t.Status = i18n.T("trace.status.canceled")
 		}
 	}
+}
+
+// clearTraceTab empties a stopped tab's hops.
+func (a *app) clearTraceTab(tab *traceTab) {
+	if tab == nil || tab.isRunning() {
+		return
+	}
+	a.remoteTraceOp("/api/trace/reset", tab, nil)
+	tab.mu.Lock()
+	tab.Hops = nil
+	tab.mu.Unlock()
+	tab.Status = ""
+	tab.Selected = -1
+}
+
+// moveTraceTabTo moves tab from to the final position to.
+func (a *app) moveTraceTabTo(from, to int) {
+	n := len(a.traceTabs)
+	if from < 0 || from >= n || to < 0 || to >= n || from == to {
+		return
+	}
+	tab := a.traceTabs[from]
+	a.traceTabs = append(a.traceTabs[:from], a.traceTabs[from+1:]...)
+	a.traceTabs = append(a.traceTabs[:to], append([]*traceTab{tab}, a.traceTabs[to:]...)...)
+	a.traceActive = to
+	if a.remote != nil {
+		a.remoteTraceOp("/api/trace/move", tab, map[string]any{"to": to})
+		return
+	}
+	a.persist()
 }

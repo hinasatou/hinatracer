@@ -42,6 +42,16 @@ type Manager struct {
 	cancel   context.CancelFunc
 	running  bool
 	onUpdate func()
+	onSample func(host, ip string, at time.Time, ms float64)
+}
+
+// SetOnSample registers a callback for every probe result: ms is the
+// latency, or HistoryLost for a lost probe. It runs with the manager lock
+// held, so it must not call back into the manager.
+func (m *Manager) SetOnSample(fn func(host, ip string, at time.Time, ms float64)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onSample = fn
 }
 
 // NewManager creates a manager with the given interval.
@@ -171,6 +181,7 @@ func (m *Manager) Snapshots() []Snapshot {
 	for i, t := range m.targets {
 		st := t.Stats
 		st.Latencies = append([]float64(nil), t.Stats.Latencies...)
+		st.History = append([]float64(nil), t.Stats.History...)
 		out[i] = Snapshot{
 			ID:      t.ID,
 			Host:    t.Host,
@@ -303,6 +314,13 @@ func (m *Manager) pingAll() {
 			}
 			if res.IP != "" {
 				t.IP = res.IP
+			}
+			if fn := m.onSample; fn != nil {
+				v := HistoryLost
+				if res.OK {
+					v = float64(res.RTT) / float64(time.Millisecond)
+				}
+				fn(t.Host, t.IP, now, v)
 			}
 			if !res.OK {
 				t.Stats.AddFailure(now)
@@ -439,4 +457,18 @@ func (m *Manager) MoveDown(id int) bool {
 	}
 	m.targets[i], m.targets[i+1] = m.targets[i+1], m.targets[i]
 	return true
+}
+
+// EditStats runs f on a target's stats under the lock (restoring saved
+// totals). Returns false for an unknown id.
+func (m *Manager) EditStats(id int, f func(*Stats)) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, t := range m.targets {
+		if t.ID == id {
+			f(&t.Stats)
+			return true
+		}
+	}
+	return false
 }

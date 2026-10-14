@@ -14,15 +14,15 @@ import (
 )
 
 const (
-	appVersion = "1.1.5"
+	appVersion = "1.2.0"
 
 	// Default window sizes (a saved window-state.json overrides them).
 	mainWinW      = 1460
 	mainWinH      = 980
 	detailWinW    = 690
-	detailWinH    = 780
+	detailWinH    = 900
 	detailWinMinW = 560
-	detailWinMinH = 690
+	detailWinMinH = 840
 	appRepoURL    = "https://github.com/hinasatou/hinatracer"
 	contentMinH   = float32(200)
 	pageTableMinH = float32(280)
@@ -36,13 +36,23 @@ func (a *app) view(c *ui.Context) {
 			a.viewTopBar(c)
 			ui.Column(c).Grow(1).MinWidth(0).Padding(16, 20).Gap(14).Children(func() {
 				a.viewUpdatePanel(c)
+				a.viewConfirmResetModal(c)
+				remote := a.remote != nil
 				switch a.nav {
 				case "ping":
 					a.viewPing(c)
+				case "http":
+					a.viewHTTP(c)
 				case "iplookup":
 					a.viewIPLookup(c)
 				case "settings":
 					a.viewSettings(c)
+				case "webui":
+					if remote {
+						a.viewRemoteWebUI(c)
+					} else {
+						a.viewWebUI(c)
+					}
 				case "about":
 					a.viewAbout(c)
 				default:
@@ -68,8 +78,10 @@ func (a *app) viewSidebar(c *ui.Context) {
 		ui.Sidebar(c, &a.nav, func() {
 			ui.SidebarSection(c, i18n.T("nav.section.features"), nil, func() {
 				ui.SidebarItem(c, "ping", nil, i18n.T("nav.ping"))
+				ui.SidebarItem(c, "http", nil, i18n.T("nav.http"))
 				ui.SidebarItem(c, "trace", nil, i18n.T("nav.trace"))
 				ui.SidebarItem(c, "iplookup", nil, i18n.T("nav.iplookup"))
+				ui.SidebarItem(c, "webui", nil, i18n.T("nav.webui"))
 				ui.SidebarItem(c, "settings", nil, i18n.T("nav.settings"))
 				ui.SidebarItem(c, "about", nil, i18n.T("nav.about"))
 			})
@@ -84,10 +96,14 @@ func (a *app) viewTopBar(c *ui.Context) {
 	switch a.nav {
 	case "ping":
 		title, sub = i18n.T("top.ping.title"), i18n.T("top.ping.sub")
+	case "http":
+		title, sub = i18n.T("top.http.title"), i18n.T("top.http.sub")
 	case "iplookup":
 		title, sub = i18n.T("top.lookup.title"), i18n.T("top.lookup.sub")
 	case "settings":
 		title, sub = i18n.T("top.settings.title"), i18n.T("top.settings.sub")
+	case "webui":
+		title, sub = i18n.T("top.webui.title"), i18n.T("top.webui.sub")
 	case "about":
 		title, sub = i18n.T("top.about.title"), i18n.T("top.about.sub")
 	}
@@ -100,6 +116,23 @@ func (a *app) viewTopBar(c *ui.Context) {
 		ui.Spacer(c)
 		if a.nav == "trace" && a.anyTraceRunning() {
 			ui.Badge(c, i18n.T("badge.tracing")).Background(t.Accent.Alpha(0.15)).TextColor(t.Accent)
+		}
+		if a.notice != "" && time.Since(a.noticeAt) < 8*time.Second {
+			ui.Text(c, a.notice).FontSize(12).TextColor(t.Danger).SingleLine().MinWidth(0)
+		}
+		if a.remote != nil {
+			st, _ := a.remote.Status()
+			col := t.Success
+			if st != "connected" {
+				col = t.Danger
+			}
+			ui.Badge(c, i18n.T("remote.badge")+" · "+i18n.T("remote.status."+st)).Background(col.Alpha(0.15)).TextColor(col)
+		}
+		if a.nav == "http" && a.remote == nil && a.httpMgr.Running() {
+			ui.Badge(c, i18n.T("badge.monitoring")).Background(t.Success.Alpha(0.18)).TextColor(t.Success)
+		}
+		if st := a.web.srv.Status(); st.Running {
+			ui.Badge(c, i18n.T("badge.web")).Background(t.Accent.Alpha(0.15)).TextColor(t.Accent)
 		}
 		if a.nav == "ping" && a.pingMgr.Running() {
 			ui.Badge(c, i18n.T("badge.monitoring")).Background(t.Success.Alpha(0.18)).TextColor(t.Success)
@@ -171,12 +204,19 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 	pendingStartAll := false
 	pendingStopAll := false
 
+	ro := a.readOnly()
+	pendingMove := [2]int{-1, -1}
 	list := ui.Column(c).Gap(8).Padding(8, 8).FillHeight().MinWidth(0)
 	list.Children(func() {
-		if ui.PrimaryButton(c, i18n.T("trace.tab.add")).FillWidth().Clicked() {
+		if ro {
+			ui.Badge(c, i18n.T("remote.readonly")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
+		} else if ui.PrimaryButton(c, i18n.T("trace.tab.add")).FillWidth().Clicked() {
 			pendingAdd = true
 		}
 		ui.Row(c).Gap(6).FillWidth().Children(func() {
+			if ro {
+				return
+			}
 			if ui.Button(c, i18n.T("trace.tab.start_all")).Disabled(!traceTabsCanStartAll(tabs)).Grow(1).Clicked() {
 				pendingStartAll = true
 			}
@@ -228,7 +268,7 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 						} else {
 							txt.TextColor(t.TextMuted)
 						}
-						showClose := on || row.Hovered()
+						showClose := !ro && (on || row.Hovered())
 						if showClose {
 							if ui.Button(c, "×").Padding(2, 6).Clicked() {
 								pendingClose = idx
@@ -241,6 +281,17 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 						pendingSelect = idx
 					}
 					row.ContextMenu(func(m *ui.Menu) {
+						if ro {
+							m.Item(i18n.T("remote.readonly")).Disabled(true)
+							return
+						}
+						if m.Item(i18n.T("ping.ctx.move_up")).Disabled(idx == 0).Chosen() {
+							pendingMove = [2]int{idx, idx - 1}
+						}
+						if m.Item(i18n.T("ping.ctx.move_down")).Disabled(idx >= n-1).Chosen() {
+							pendingMove = [2]int{idx, idx + 1}
+						}
+						m.Separator()
 						if m.Item(i18n.T("trace.tab.ctx.close")).Chosen() {
 							pendingClose = idx
 						}
@@ -270,7 +321,15 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 		})
 	})
 
-	if pendingAdd {
+	if ro { // guests only switch tabs
+		if pendingSelect >= 0 && pendingSelect < len(a.traceTabs) {
+			a.traceActive = pendingSelect
+		}
+		return
+	}
+	if pendingMove[0] >= 0 {
+		a.moveTraceTabTo(pendingMove[0], pendingMove[1])
+	} else if pendingAdd {
 		a.addTraceTabEmpty()
 		a.persist()
 	} else if pendingStartAll {
@@ -302,17 +361,20 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 func (a *app) viewTraceContent(c *ui.Context) {
 	t := c.Theme()
 	tab := a.activeTrace()
+	ro := a.readOnly()
 
 	ui.Column(c).Gap(14).Padding(0, 4).MinWidth(0).FillHeight().Children(func() {
 		card(c, func() {
 			ui.Text(c, i18n.T("trace.target")).FontSize(13).Bold()
 			ui.Text(c, i18n.T("trace.desc")).FontSize(12).TextColor(t.TextMuted)
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
-				ui.TextInput(c, &tab.Host).Placeholder(i18n.T("trace.placeholder")).Label(i18n.T("trace.label")).Grow(1).MinWidth(180)
-				if ui.TextInput(c, &tab.Alias).Placeholder(i18n.T("trace.alias_ph")).Label(i18n.T("trace.alias")).Width(140).Changed() {
+				ui.TextInput(c, &tab.Host).Placeholder(i18n.T("trace.placeholder")).Label(i18n.T("trace.label")).Grow(1).MinWidth(180).Disabled(ro)
+				if ui.TextInput(c, &tab.Alias).Placeholder(i18n.T("trace.alias_ph")).Label(i18n.T("trace.alias")).Width(140).Disabled(ro).Changed() {
 					a.persist()
 				}
-				if tab.isRunning() {
+				if ro {
+					// guests watch only
+				} else if tab.isRunning() {
 					if ui.Button(c, i18n.T("trace.stop")).Clicked() {
 						a.stopTrace()
 					}
@@ -326,22 +388,20 @@ func (a *app) viewTraceContent(c *ui.Context) {
 			ui.Row(c).Gap(12).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, i18n.T("trace.mtr")).FontSize(12)
-					if ui.Switch(c, &tab.MTR).Changed() {
+					if ui.Switch(c, &tab.MTR).Disabled(ro).Changed() {
 						a.persist()
 					}
 				})
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(6, 10).Radius(8).
 					Background(t.Surface).Border(1, t.Border).Children(func() {
 					ui.Text(c, i18n.T("trace.interval")).FontSize(12).TextColor(t.TextMuted)
-					if ui.NumberInput(c, &tab.Interval, 0.2, 3600, 0.5).Changed() {
+					if ui.NumberInput(c, &tab.Interval, 0.2, 3600, 0.5).Disabled(ro).Changed() {
 						a.applyTraceInterval(tab)
 					}
 					ui.Text(c, i18n.T("ping.seconds")).FontSize(12).TextColor(t.TextMuted)
 				})
-				if ui.Button(c, i18n.T("trace.reset")).Disabled(tab.isRunning()).Clicked() {
-					tab.Hops = nil
-					tab.Status = ""
-					tab.Selected = -1
+				if !ro && ui.Button(c, i18n.T("trace.reset")).Disabled(tab.isRunning()).Clicked() {
+					a.clearTraceTab(tab)
 				}
 			})
 			if tab.Status != "" {
@@ -615,7 +675,12 @@ func (a *app) viewPing(c *ui.Context) {
 		a.pingSnaps = a.pingMgr.Snapshots()
 	}
 
+	ro := a.readOnly()
 	card(c, func() {
+		if ro {
+			ui.Badge(c, i18n.T("remote.readonly")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
+			return
+		}
 		ui.Text(c, i18n.T("ping.add_title")).FontSize(13).Bold()
 		ui.Row(c).Gap(10).AlignItems(ui.End).Wrap().MinWidth(0).Children(func() {
 			ui.TextInput(c, &a.pingHost).Placeholder(i18n.T("ping.host_ph")).Label(i18n.T("ping.host")).Width(220)
@@ -657,8 +722,10 @@ func (a *app) viewPing(c *ui.Context) {
 					}
 				}
 				if ui.Button(c, i18n.T("ping.reset")).Clicked() {
-					a.pingMgr.ResetStats(0)
-					a.pingSnaps = a.pingMgr.Snapshots()
+					a.confirmReset(len(a.pingSnaps), func() {
+						a.resetPingStats(0)
+						a.pingSnaps = a.pingMgr.Snapshots()
+					})
 				}
 				selIDs := selectedKeys(pingKeys(a.sortedPingSnaps()), &a.pingSel, a.pingSelected)
 				if ui.Button(c, i18n.T("ping.delete_sel")).Disabled(len(selIDs) == 0).Clicked() {
@@ -674,7 +741,7 @@ func (a *app) viewPing(c *ui.Context) {
 			statusColor = t.Success
 		}
 		ui.Text(c, status).FontSize(12).TextColor(statusColor)
-		if loading, dbStat := a.getDBStatus(); loading {
+		if loading, dbStat := a.pingDBStatus(); loading {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Spinner(c)
 				ui.Text(c, i18n.T("db.loading")).FontSize(12).TextColor(t.TextMuted)
@@ -717,7 +784,7 @@ func (a *app) viewPing(c *ui.Context) {
 				ui.Text(c, i18n.T("ping.empty")).FontSize(12).TextColor(t.TextMuted)
 			})
 		}
-		if a.pingSort.Column == "#" && !a.pingSort.Descending {
+		if !ro && a.pingSort.Column == "#" && !a.pingSort.Descending {
 			a.pingTable.Reorder = func(rows []int, to int) {
 				a.reorderPingRows(rows, to)
 			}
@@ -760,7 +827,9 @@ func (a *app) viewPing(c *ui.Context) {
 						}
 					})
 				case 1:
-					if ui.EditableText(c, &a.aliasEdits[row]).Changed() {
+					if ro {
+						ui.Text(c, emptyDash(s.Alias)).SingleLine()
+					} else if ui.EditableText(c, &a.aliasEdits[row]).Changed() {
 						a.pingMgr.SetAlias(s.ID, a.aliasEdits[row])
 						a.refreshPingSnaps()
 						a.persist()
@@ -1044,9 +1113,9 @@ func (a *app) viewPingDetail(c *ui.Context) {
 			{i18n.T("detail.last_fail"), fmtTime(s.Stats.LastFail)},
 			{i18n.T("detail.samples"), fmt.Sprintf("%d", len(s.Stats.Latencies))},
 		}
-		for _, r := range rows {
-			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, r[0]).Width(100).TextColor(t.TextMuted).FontSize(13)
+		row := func(r [2]string, labelW float32) {
+			ui.Row(c).Gap(12).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				ui.Text(c, r[0]).Width(labelW).TextColor(t.TextMuted).FontSize(13)
 				if r[0] == i18n.T("detail.region") {
 					regionCell(c, iso, region)
 				} else if r[0] == i18n.T("detail.asn_region") {
@@ -1062,8 +1131,33 @@ func (a *app) viewPingDetail(c *ui.Context) {
 				}
 			})
 		}
+		// Identity rows (long values) take the full width; the statistics
+		// rows go in two columns so the latency chart fits the window.
+		const identityRows = 9
+		for _, r := range rows[:identityRows] {
+			row(r, 100)
+		}
+		ui.Divider(c)
+		statRows := rows[identityRows:]
+		half := (len(statRows) + 1) / 2
+		ui.Row(c).Gap(16).MinWidth(0).Children(func() {
+			for _, part := range [][][2]string{statRows[:half], statRows[half:]} {
+				ui.Column(c).Gap(10).Grow(1).MinWidth(0).Children(func() {
+					for _, r := range part {
+						row(r, 100)
+					}
+				})
+			}
+		})
+		a.latencyChartView(c, s.Stats.History)
 		ui.Spacer(c)
-		ui.Row(c).Gap(10).Justify(ui.End).Children(func() {
+		ui.Row(c).Gap(10).Justify(ui.End).AlignItems(ui.Center).MinWidth(0).Children(func() {
+			if a.detailExportMsg != "" {
+				ui.Text(c, a.detailExportMsg).FontSize(11).TextColor(t.TextMuted).Grow(1).MinWidth(0).Selectable()
+			}
+			if ui.Button(c, i18n.T("history.export.button")).Clicked() {
+				a.exportDetailCSV()
+			}
 			if ui.Button(c, i18n.T("detail.copy_all")).Clicked() {
 				copyText(formatPingDetail(s, loc, iso, region, meta.ASN, meta.ASNISO, meta.ASNRegion, a.pingRDNSOf(s.Host), a.pingIPOf(s), a.detailIsHop, a.detailHopTTL))
 			}
@@ -1148,6 +1242,7 @@ func (a *app) viewSettings(c *ui.Context) {
 	t := c.Theme()
 	ui.Scroll(c).Grow(1).Fill().MinWidth(0).MinHeight(0).TrackScroll(&a.settingsScroll).Children(func() {
 		ui.Column(c).Gap(14).MinWidth(0).Padding(0, 0, 8, 0).Children(func() {
+			a.viewDataSource(c)
 			card(c, func() {
 				ui.Text(c, i18n.T("settings.appearance")).FontSize(14).Bold()
 				ui.Form(c, func() {
@@ -1178,6 +1273,11 @@ func (a *app) viewSettings(c *ui.Context) {
 				langDir := filepath.Join(configDirHint(), "lang")
 				ui.Text(c, i18n.Tf("settings.lang_packs", langDir)).FontSize(12).TextColor(t.TextMuted)
 			})
+			if a.remote != nil {
+				// remote mode: the rest are the server's settings
+				a.viewRemoteServerSettings(c)
+				return
+			}
 
 			card(c, func() {
 				ui.Text(c, i18n.T("settings.data")).FontSize(14).Bold()
@@ -1240,6 +1340,7 @@ func (a *app) viewSettings(c *ui.Context) {
 			})
 
 			a.viewSettingsUpdate(c)
+			a.viewSettingsHistory(c)
 
 			card(c, func() {
 				ui.Text(c, i18n.T("settings.dl_all.title")).FontSize(14).Bold()
@@ -1326,6 +1427,7 @@ func (a *app) viewAbout(c *ui.Context) {
 		a.viewAboutUpdate(c)
 		ui.Divider(c)
 		ui.Text(c, i18n.T("about.desc")).FontSize(13)
+		ui.Text(c, i18n.T("about.license")).FontSize(12).TextColor(t.TextMuted)
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
 			ui.Text(c, i18n.T("about.homepage")).FontSize(13)
 			link := ui.Text(c, appRepoURL).FontSize(13).TextColor(t.Accent)
@@ -1340,3 +1442,13 @@ func (a *app) viewAbout(c *ui.Context) {
 }
 
 var mygoShellOpen = func(url string) {}
+
+// pingDBStatus is the IP database state shown on the Ping page: the
+// server's in remote mode (its lookups use its databases), else ours.
+func (a *app) pingDBStatus() (loading bool, status string) {
+	if a.remote != nil {
+		st := a.remoteState()
+		return st.Settings.DBLoading, st.Settings.DBStatus
+	}
+	return a.getDBStatus()
+}

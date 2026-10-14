@@ -134,6 +134,10 @@ func (a *app) startUpdateInstall() {
 	if snap.phase == "downloading" {
 		return
 	}
+	if serverMode {
+		a.updSet(func(s *updState) { s.phase, s.err = "error", i18n.T("update.err.server") })
+		return
+	}
 	exe, err := os.Executable()
 	if err == nil {
 		if r, e := filepath.EvalSymlinks(exe); e == nil {

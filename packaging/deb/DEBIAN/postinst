@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+if ! getent group hinatracer >/dev/null; then
+  addgroup --system hinatracer
+fi
+if ! getent passwd hinatracer >/dev/null; then
+  adduser --system --ingroup hinatracer --home /var/lib/hinatracer \
+    --no-create-home --shell /usr/sbin/nologin --gecos "HinaTracer" hinatracer
+fi
+install -d -o hinatracer -g hinatracer -m 0700 /var/lib/hinatracer
+if [ -f /etc/hinatracer/config.json ]; then
+  chown root:hinatracer /etc/hinatracer/config.json
+  chmod 0640 /etc/hinatracer/config.json
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload || true
+  systemctl enable hinatracer.service || true
+  systemctl restart hinatracer.service || true
+fi
+echo "HinaTracer server installed. Open http://127.0.0.1:8790/"
+echo "Set an access password with: sudo -u hinatracer hinatracer web passwd --config /etc/hinatracer/config.json"
+echo "Then: sudo systemctl restart hinatracer"

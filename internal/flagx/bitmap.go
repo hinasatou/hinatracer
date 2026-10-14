@@ -63,3 +63,16 @@ func NameOnly(iso, name string) string {
 func CopyLabel(iso, name string) string {
 	return WithName(iso, NameOnly(iso, name))
 }
+
+// PNG returns the embedded flag PNG bytes for a 2-letter ISO code, or nil.
+func PNG(iso string) []byte {
+	iso = strings.ToLower(strings.TrimSpace(iso))
+	if len(iso) != 2 || iso[0] < 'a' || iso[0] > 'z' || iso[1] < 'a' || iso[1] > 'z' {
+		return nil
+	}
+	data, err := flagFS.ReadFile("flags/" + iso + ".png")
+	if err != nil {
+		return nil
+	}
+	return data
+}

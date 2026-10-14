@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+if [ "$1" = purge ]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+  fi
+  rm -rf /var/lib/hinatracer
+  if getent passwd hinatracer >/dev/null; then
+    deluser --system hinatracer >/dev/null 2>&1 || true
+  fi
+  if getent group hinatracer >/dev/null; then
+    delgroup --system hinatracer >/dev/null 2>&1 || true
+  fi
+fi

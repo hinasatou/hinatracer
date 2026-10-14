@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -88,6 +89,13 @@ func pingKeys(display []pinger.Snapshot) []int {
 }
 
 func (a *app) deletePingIDs(ids []int) {
+	if a.remote == nil {
+		for _, s := range a.pingMgr.Snapshots() {
+			if slices.Contains(ids, s.ID) {
+				a.resetSavedStats(histKeyPing(s.Host))
+			}
+		}
+	}
 	for _, id := range ids {
 		a.pingMgr.Remove(id)
 		a.pingSel.Remove(id)
@@ -118,6 +126,10 @@ func (a *app) traceForPingIDs(ids []int) {
 // pingMultiMenu builds the reduced menu for several selected targets.
 func (a *app) pingMultiMenu(m *ui.Menu, ids []int, post *[]func()) {
 	n := len(ids)
+	if a.readOnly() {
+		m.Item(i18n.T("remote.readonly")).Disabled(true)
+		return
+	}
 	if m.Item(i18n.Tf("ping.ctx.multi.enable", n)).Chosen() {
 		*post = append(*post, func() { a.setPingEnabledIDs(ids, true) })
 	}
@@ -126,6 +138,9 @@ func (a *app) pingMultiMenu(m *ui.Menu, ids []int, post *[]func()) {
 	}
 	if m.Item(i18n.Tf("ping.ctx.multi.traceroute", n)).Chosen() {
 		*post = append(*post, func() { a.traceForPingIDs(ids) })
+	}
+	if m.Item(i18n.T("ping.ctx.reset")).Chosen() {
+		*post = append(*post, func() { a.resetPingIDs(ids) })
 	}
 	m.Separator()
 	if m.Item(i18n.Tf("ping.ctx.multi.delete", n)).Chosen() {
@@ -210,6 +225,12 @@ func (a *app) pingMenu(m *ui.Menu, display []pinger.Snapshot, keys []int, post *
 		}
 	}
 	m.Separator()
+	if a.readOnly() {
+		if m.Item(i18n.T("ping.ctx.detail")).Chosen() {
+			a.openPingDetail(s)
+		}
+		return
+	}
 	if m.Item(i18n.T("ping.ctx.edit_alias")).Chosen() {
 		a.openAliasEdit(s.ID, s.Alias)
 	}
@@ -237,6 +258,9 @@ func (a *app) pingMenu(m *ui.Menu, display []pinger.Snapshot, keys []int, post *
 	if m.Item(i18n.T("ping.ctx.traceroute")).Chosen() {
 		*post = append(*post, func() { a.jumpToTrace(s.Host) })
 	}
+	if m.Item(i18n.T("ping.ctx.reset")).Chosen() {
+		*post = append(*post, func() { a.resetPingIDs([]int{s.ID}) })
+	}
 	m.Separator()
 	if m.Item(i18n.T("ping.ctx.delete")).Chosen() {
 		*post = append(*post, func() { a.deletePingIDs([]int{s.ID}) })
@@ -262,7 +286,7 @@ func (a *app) traceMenu(m *ui.Menu, tab *traceTab, display []traceHopView, keys 
 				hosts = append(hosts, h.Addr)
 			}
 		}
-		if m.Item(i18n.Tf("trace.ctx.multi.add_ping", len(hosts))).Disabled(len(hosts) == 0).Chosen() {
+		if m.Item(i18n.Tf("trace.ctx.multi.add_ping", len(hosts))).Disabled(len(hosts) == 0 || a.readOnly()).Chosen() {
 			*post = append(*post, func() {
 				added, skipped := a.addPingHostsBatch(hosts)
 				tab.Status = i18n.Tf("feedback.batch_added", added, skipped)
@@ -290,10 +314,21 @@ func (a *app) traceMenu(m *ui.Menu, tab *traceTab, display []traceHopView, keys 
 	}
 	m.Separator()
 	ipOK := h.Addr != "" && h.Addr != "*"
-	if m.Item(i18n.T("trace.ctx.add_ping")).Disabled(!ipOK).Chosen() {
+	if m.Item(i18n.T("trace.ctx.add_ping")).Disabled(!ipOK || a.readOnly()).Chosen() {
 		*post = append(*post, func() { a.addPingFromTrace(h.Addr, h.RDNS) })
 	}
 	if m.Item(i18n.T("trace.ctx.detail")).Disabled(!ipOK && h.Stats.Success+h.Stats.Failure == 0).Chosen() {
 		*post = append(*post, func() { a.openHopDetail(h) })
 	}
+}
+
+// resetPingIDs resets the targets' stats, asking first while they are
+// saved to disk.
+func (a *app) resetPingIDs(ids []int) {
+	a.confirmReset(len(ids), func() {
+		for _, id := range ids {
+			a.resetPingStats(id)
+		}
+		a.refreshPingSnaps()
+	})
 }

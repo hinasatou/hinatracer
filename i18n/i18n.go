@@ -262,3 +262,64 @@ func UserLangDirs(configDir, exeDir string) []string {
 	}
 	return dirs
 }
+
+// Strings returns every string of the active language with the fallback
+// chain applied, for clients (the WebUI) that render text themselves.
+
+// StringsFor returns every string for code without changing the active
+// language (used by the WebUI's per-browser language choice).
+func StringsFor(code string) map[string]string {
+	mu.RLock()
+	defer mu.RUnlock()
+	code = strings.TrimSpace(code)
+	if code == "zh-TW" {
+		code = "zh-HK"
+	}
+	if _, ok := packs[code]; !ok {
+		lower := strings.ToLower(code)
+		for c := range packs {
+			if strings.ToLower(c) == lower {
+				code = c
+				break
+			}
+		}
+	}
+	if _, ok := packs[code]; !ok {
+		code = current
+	}
+	out := map[string]string{}
+	chain := append([]string(nil), fallback...)
+	for i := len(chain) - 1; i >= 0; i-- {
+		if p := packs[chain[i]]; p != nil {
+			for k, v := range p.Strings {
+				out[k] = v
+			}
+		}
+	}
+	if p := packs[code]; p != nil {
+		for k, v := range p.Strings {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func Strings() map[string]string {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := map[string]string{}
+	chain := append([]string(nil), fallback...)
+	for i := len(chain) - 1; i >= 0; i-- {
+		if p := packs[chain[i]]; p != nil {
+			for k, v := range p.Strings {
+				out[k] = v
+			}
+		}
+	}
+	if p := packs[current]; p != nil {
+		for k, v := range p.Strings {
+			out[k] = v
+		}
+	}
+	return out
+}

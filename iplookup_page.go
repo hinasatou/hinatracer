@@ -28,6 +28,7 @@ type lookupRow struct {
 	PingState string // "" pending | ok | timeout | fail
 	PingMs    float64
 	PingErr   string
+	PingText  string // remote mirror: the server's ping cell text
 }
 
 // pingTarget is the probe/add-to-Ping target for this row's IP.
@@ -53,6 +54,9 @@ func (a *app) initIPLookup() {
 }
 
 func (a *app) clearLookupResults() {
+	if a.remote != nil && !a.readOnly() {
+		a.remote.Enqueue("/api/lookup/clear", nil, nil)
+	}
 	a.lookupMu.Lock()
 	a.lookupRows = nil
 	a.lookupSelected = -1
@@ -71,6 +75,10 @@ func (a *app) runIPLookup() {
 	queries := iplookup.ParseInput(text)
 	if len(queries) == 0 {
 		a.lookupStatus = i18n.T("lookup.status.empty")
+		return
+	}
+	if a.remote != nil {
+		a.remoteLookup(text, len(queries))
 		return
 	}
 	a.lookupMu.Lock()
@@ -171,6 +179,9 @@ func (a *app) probeLookupRow(id int) {
 }
 
 func lookupPingText(r lookupRow) string {
+	if r.PingText != "" {
+		return r.PingText
+	}
 	switch r.PingState {
 	case "ok":
 		return fmt.Sprintf("%.1f ms", r.PingMs)
@@ -228,6 +239,9 @@ func (a *app) resolveLookupDomain(raw, domain string, port int) {
 }
 
 func (a *app) ensureLookupRDNS(ip string) {
+	if a.remote != nil {
+		return
+	}
 	ip = strings.TrimSpace(ip)
 	if ip == "" {
 		return
@@ -507,6 +521,9 @@ func (a *app) lookupMenu(m *ui.Menu, display []lookupRow, keys []int, post *[]fu
 			}
 			copyText(b.String())
 		}
+		if a.readOnly() {
+			return
+		}
 		m.Separator()
 		if m.Item(i18n.T("lookup.ctx.add_ping_ip")).Disabled(len(ipTargets) == 0).Chosen() {
 			*post = append(*post, func() { a.lookupStatus = a.addPingHostSilent(ipTargets[0], "") })
@@ -517,6 +534,10 @@ func (a *app) lookupMenu(m *ui.Menu, display []lookupRow, keys []int, post *[]fu
 		if m.Item(i18n.T("lookup.ctx.add_trace")).Disabled(len(traceHosts) == 0).Chosen() {
 			*post = append(*post, func() { a.lookupStatus = a.addTraceFromLookup(traceHosts[0]) })
 		}
+		return
+	}
+	if a.readOnly() {
+		m.Item(i18n.T("remote.readonly")).Disabled(true)
 		return
 	}
 	if m.Item(i18n.Tf("lookup.ctx.multi.add_ping_ip", len(ipTargets))).Disabled(len(ipTargets) == 0).Chosen() {

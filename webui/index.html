@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>HinaTracer</title>
+<link rel="icon" href="/icon.png">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="app" class="app">
+  <aside class="side" id="side">
+    <div class="brand"><img src="/icon.png" alt=""><div><div class="brand-name">HinaTracer</div><div class="brand-sub" data-t="app.subtitle"></div></div></div>
+    <div class="nav-section" data-t="nav.section.features"></div>
+    <nav id="nav"></nav>
+    <div class="side-foot"><span id="ver"></span><button class="link-btn" id="logout" hidden></button></div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <button class="icon-btn menu-btn" id="menuBtn" aria-label="menu">&#9776;</button>
+      <div class="top-titles"><div class="top-title" id="topTitle"></div><div class="top-sub" id="topSub"></div></div>
+      <div class="top-badges" id="topBadges"></div>
+    </header>
+    <div class="banner" id="updBanner" hidden></div>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+<div class="login" id="login" hidden>
+  <form class="login-card" id="loginForm">
+    <img src="/icon.png" alt="">
+    <h1>HinaTracer</h1>
+    <p id="loginDesc"></p>
+    <input type="password" id="loginPw" autocomplete="current-password" required>
+    <button class="btn primary" type="submit" id="loginBtn"></button>
+    <button class="btn" type="button" id="loginGuest" hidden></button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+<div class="toast" id="toast" hidden></div>
+<div class="conn" id="conn" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

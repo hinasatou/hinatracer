@@ -15,6 +15,7 @@ func TestDetailLiveUpdatePing(t *testing.T) {
 	a := freshApp(t)
 	redraws := 0
 	a.detailRedraw = func() { redraws++ }
+	a.detailQuerying = true // no background history query in this headless test
 	a.detailSnap = pinger.Snapshot{ID: 7, Host: "192.0.2.1", Enabled: true}
 
 	s := pinger.Snapshot{ID: 7, Host: "192.0.2.1", Enabled: true, IP: "192.0.2.1"}
@@ -36,6 +37,7 @@ func TestDetailLiveUpdateHop(t *testing.T) {
 	a := freshApp(t)
 	redraws := 0
 	a.detailRedraw = func() { redraws++ }
+	a.detailQuerying = true // no background history query in this headless test
 	tab := a.activeTrace()
 	tab.Hops = []traceHopView{{TTL: 2, Addr: "198.51.100.2"}}
 	a.detailIsHop, a.detailHopTTL, a.detailHopTab = true, 2, tab.ID

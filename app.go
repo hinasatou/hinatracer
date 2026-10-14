@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"hinatracer/internal/history"
+	"hinatracer/internal/httpmon"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -39,6 +43,8 @@ type app struct {
 
 	upd updState
 
+	web webState // WebUI server + WebUI page state
+
 	layoutMu      sync.Mutex
 	layoutPending map[string]config.TableLayout
 	layoutTimer   *time.Timer
@@ -67,17 +73,22 @@ type app struct {
 	tabStripWidth float32 // left vertical tab list width
 
 	// ping
-	pingMgr      *pinger.Manager
-	pingHost     string
-	pingAlias    string
-	pingInterval float64
-	pingSelected int
-	pingTable    ui.ListState
-	pingSel      ui.Selection[int]
-	pingSort     ui.SortOrder
-	pingSnaps    []pinger.Snapshot
-	aliasEdits   []string
-	aliasEditIDs []int
+	pingMgr       pingEngine
+	pingLocal     *pinger.Manager
+	rmir          remoteMirror
+	resetAsk      confirmUI
+	rsrv          remoteServerUI
+	statsRestored atomic.Bool
+	pingHost      string
+	pingAlias     string
+	pingInterval  float64
+	pingSelected  int
+	pingTable     ui.ListState
+	pingSel       ui.Selection[int]
+	pingSort      ui.SortOrder
+	pingSnaps     []pinger.Snapshot
+	aliasEdits    []string
+	aliasEditIDs  []int
 
 	// ping alias edit modal
 	aliasEditOpen bool
@@ -126,6 +137,24 @@ type app struct {
 	detailHopTab int // trace tab ID the hop detail came from
 	// detailRedraw asks the details window to rebuild; replaced in tests.
 	detailRedraw func()
+	// latency chart range (index into chartRanges) and its last query
+	detailRange     int
+	detailPts       []history.Point
+	detailPtsFor    string
+	detailQueryAt   time.Time
+	detailQuerying  bool
+	detailExportMsg string
+
+	hist     *history.Store
+	http     httpUI
+	httpMgr  *httpmon.Manager
+	apiOnce  sync.Once
+	apiMux   atomic.Pointer[http.ServeMux]
+	remote   *remoteClient
+	notice   string
+	noticeAt time.Time
+	rset     remoteSettingsUI
+	histUI   histUI // probe history (memory, optionally SQLite)
 
 	// settings drafts
 	draftIPDB      string
@@ -236,13 +265,17 @@ func newApp() *app {
 	a.dataDL = datadl.NewManager()
 	a.dataDL.SetOnUpdate(func() { a.requestUIUpdate() })
 
-	a.pingMgr = pinger.NewManager(time.Duration(a.pingInterval * float64(time.Second)))
+	a.pingLocal = pinger.NewManager(time.Duration(a.pingInterval * float64(time.Second)))
+	a.pingMgr = a.pingLocal
 	for _, t := range cfg.PingTargets {
 		if strings.TrimSpace(t.Host) != "" {
 			a.pingMgr.AddEnabled(t.Host, t.Alias, t.IsEnabled())
 		}
 	}
 	a.pingSnaps = a.pingMgr.Snapshots()
+	a.initHistory()
+	a.initHTTP()
+	a.initWebAuth()
 	// Heavy work (DB load, DNS/geo/ASN, auto-start) starts after the window is shown.
 	return a
 }
@@ -283,24 +316,40 @@ func (a *app) setWindow(w *mygo.Window) {
 	a.pingMgr.SetOnUpdate(func() {
 		a.requestUIUpdate()
 	})
-	safeGo("bootstrap", a.bootstrapAfterWindow)
+	if a.startRemoteFromConfig() {
+		// remote mode: local engines and the local WebUI stay off.
+		safeGo("bootstrap", func() {
+			a.openHistoryDisk()
+			a.reloadDBs()
+		})
+	} else {
+		safeGo("bootstrap", a.bootstrapAfterWindow)
+		safeGo("web.autostart", a.webAutoStart)
+	}
 	a.scheduleStartupUpdateCheck(5 * time.Second)
 }
 
 func (a *app) bootstrapAfterWindow() {
 	defer recoverAndLog("bootstrap", false)
+	a.openHistoryDisk()
 	a.reloadDBs() // may take a while; runs off UI thread
 	a.refreshAllHostMeta()
 	if a.cfg.AutoStartPing && len(a.cfg.PingTargets) > 0 {
 		a.pingMgr.Start()
 		a.refreshAllPingRDNS()
 	}
+	if a.cfg.AutoStartHTTP && len(a.cfg.HTTPTargets) > 0 {
+		a.httpMgr.Start()
+	}
 	if a.cfg.AutoStartTrace {
-		for _, tab := range a.traceTabs {
-			if strings.TrimSpace(tab.Host) != "" {
-				a.startTraceTab(tab)
+		// Trace tabs belong to the UI thread (and the WebUI handlers).
+		_ = a.run(func() {
+			for _, tab := range a.traceTabs {
+				if strings.TrimSpace(tab.Host) != "" {
+					a.startTraceTab(tab)
+				}
 			}
-		}
+		})
 	}
 	a.requestUIUpdate()
 }
@@ -333,6 +382,7 @@ func (a *app) requestUIUpdate() {
 	a.updateMu.Lock()
 	a.updatePending = true
 	a.updateMu.Unlock()
+	a.web.dirty.Add(1)
 }
 
 func (a *app) flushUIUpdate() {
@@ -343,9 +393,23 @@ func (a *app) flushUIUpdate() {
 	if !pending || a.win == nil {
 		return
 	}
+	var rst *wsState
+	if rc := a.remote; rc != nil {
+		if st, have := rc.State(); have {
+			rst = &st
+		}
+		if rst != nil {
+			if rp, ok := a.pingMgr.(*remotePing); ok {
+				rp.apply(*rst)
+			}
+		}
+	}
 	snaps := a.pingMgr.Snapshots()
 	a.win.Update(func() {
 		defer recoverAndLog("ui.flush", false)
+		if rst != nil {
+			a.applyRemoteMirror(*rst)
+		}
 		a.applyFlush(snaps)
 	})
 }
@@ -361,6 +425,7 @@ func (a *app) applyFlush(snaps []pinger.Snapshot) {
 		return
 	}
 	if a.refreshDetailSnap(snaps) {
+		a.kickDetailQuery(false)
 		a.redrawDetail()
 	}
 }
@@ -438,12 +503,15 @@ func (a *app) reloadDBs() {
 		oldASN.Close()
 	}
 
+	// Paths come from the store (mutex-guarded), not a.cfg, which the UI
+	// thread may be writing while this runs in the background.
+	paths := a.store.Get()
 	var msgs []string
 	var newIP *ipdb.DB
 	var newGeo *geoip.DB
 	var newASN *asn.DB
 
-	if p := strings.TrimSpace(a.cfg.IPDBPath); p != "" {
+	if p := strings.TrimSpace(paths.IPDBPath); p != "" {
 		if db, err := ipdb.Open(p); err != nil {
 			msgs = append(msgs, i18n.Tf("db.ipdb_err", err.Error()))
 		} else {
@@ -457,7 +525,7 @@ func (a *app) reloadDBs() {
 	} else {
 		msgs = append(msgs, i18n.T("db.ipdb_none"))
 	}
-	if p := strings.TrimSpace(a.cfg.GeoIPPath); p != "" {
+	if p := strings.TrimSpace(paths.GeoIPPath); p != "" {
 		if db, err := geoip.Open(p); err != nil {
 			msgs = append(msgs, i18n.Tf("db.geoip_err", err.Error()))
 		} else {
@@ -467,7 +535,7 @@ func (a *app) reloadDBs() {
 	} else {
 		msgs = append(msgs, i18n.T("db.geoip_none"))
 	}
-	if p := strings.TrimSpace(a.cfg.ASNPath); p != "" {
+	if p := strings.TrimSpace(paths.ASNPath); p != "" {
 		if db, err := asn.Open(p); err != nil {
 			msgs = append(msgs, i18n.Tf("db.asn_err", err.Error()))
 		} else {
@@ -568,6 +636,10 @@ func (a *app) lookupAllForIP(ip string) (loc, region, iso, asnText, asnRegion, a
 }
 
 func (a *app) persist() {
+	if a.remote != nil {
+		a.persistRemote()
+		return
+	}
 	targets := a.pingMgr.TargetsForConfig()
 	pts := make([]config.PingTarget, len(targets))
 	for i, t := range targets {
@@ -582,6 +654,9 @@ func (a *app) persist() {
 	a.cfg.Language = i18n.Language()
 	a.cfg.TraceTabs = a.persistTraceTabs()
 	a.cfg.TraceActiveTab = a.traceActive
+	if a.httpMgr != nil {
+		a.cfg.HTTPTargets = a.httpTargetsForConfig()
+	}
 	_ = a.store.Set(a.cfg)
 }
 
@@ -803,12 +878,12 @@ func (a *app) saveSettings() {
 	a.cfg.IPDBPath = strings.TrimSpace(a.draftIPDB)
 	a.cfg.GeoIPPath = strings.TrimSpace(a.draftGeoIP)
 	a.cfg.ASNPath = strings.TrimSpace(a.draftASN)
+	a.persist() // before reloading: reloadDBs reads the paths from the store
 	go func() {
 		a.reloadDBs()
 		a.refreshAllHostMeta()
 		a.requestUIUpdate()
 	}()
-	a.persist()
 }
 
 func (a *app) applyLanguage(name string) {
@@ -820,12 +895,12 @@ func (a *app) applyLanguage(name string) {
 	a.langName = i18n.Name(i18n.Language())
 	a.cfg.Language = i18n.Language()
 	a.themeName = themeDisplayName(a.cfg.Theme)
+	a.persist()
 	go func() {
 		a.reloadDBs()
 		a.refreshAllHostMeta()
 		a.requestUIUpdate()
 	}()
-	a.persist()
 }
 
 func (a *app) applyTheme(name string) {
@@ -866,6 +941,9 @@ func (a *app) openDetailWindow(s pinger.Snapshot) {
 		Content:   ui.View(a.viewPingDetail),
 	})
 	a.detailWin = w
+	clampWindowHeight(w, detailWinMinH)
+	a.detailPts, a.detailPtsFor, a.detailExportMsg = nil, "", ""
+	a.kickDetailQuery(true)
 	w.OnClosed(func() {
 		a.detailWin = nil
 		a.detailIsHop = false
@@ -878,7 +956,7 @@ func configDirHint() string {
 }
 
 func ensureConfigDir() {
-	_ = os.MkdirAll(filepath.Dir(config.ResolvePath()), 0o755)
+	_ = os.MkdirAll(filepath.Dir(config.ResolvePath()), 0o700)
 }
 
 func (a *app) syncAliasEdits() {
@@ -1070,6 +1148,9 @@ func (a *app) ensurePingRDNS(hosts ...string) {
 }
 
 func (a *app) lookupPingRDNS(force bool, hosts ...string) {
+	if a.remote != nil {
+		return
+	}
 	a.pingRDNSMu.Lock()
 	if a.pingRDNS == nil {
 		a.pingRDNS = map[string]string{}
@@ -1238,6 +1319,9 @@ func (a *app) refreshAllHostMeta() {
 }
 
 func (a *app) ensureHostMeta(hosts ...string) {
+	if a.remote != nil {
+		return // remote mode: the server's state carries the meta
+	}
 	for _, host := range hosts {
 		host = strings.TrimSpace(host)
 		if host == "" {
@@ -1336,4 +1420,24 @@ func cmpIPText(a, b string) int {
 		return 1
 	}
 	return pa.Compare(pb)
+}
+
+// clampWindowHeight grows a window whose saved (window-state) size is
+// smaller than the current minimum, e.g. from an older version.
+func clampWindowHeight(w *mygo.Window, minH int) {
+	if w == nil {
+		return
+	}
+	if cw, ch := w.Size(); clampedHeight(ch, minH) != ch {
+		w.SetSize(cw, minH)
+	}
+}
+
+// clampedHeight raises a saved window height below the minimum (0 = no
+// saved size yet, left alone).
+func clampedHeight(h, minH int) int {
+	if h > 0 && h < minH {
+		return minH
+	}
+	return h
 }

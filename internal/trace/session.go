@@ -58,7 +58,16 @@ type Session struct {
 	running  bool
 	cancel   context.CancelFunc
 	onUpdate func()
+	onSample func(ttl int, addr string, at time.Time, ms float64)
 	err      error
+}
+
+// SetOnSample registers a callback for every hop probe (ms < 0: lost). It
+// runs with the session lock held and must not call back into it.
+func (s *Session) SetOnSample(fn func(ttl int, addr string, at time.Time, ms float64)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onSample = fn
 }
 
 // NewSession creates an idle session.
@@ -138,6 +147,7 @@ func (s *Session) Snapshots() []HopSnapshot {
 		}
 		st := h.stats
 		st.Latencies = append([]float64(nil), h.stats.Latencies...)
+		st.History = append([]float64(nil), h.stats.History...)
 		addr := "*"
 		if h.addr != nil {
 			addr = h.addr.String()
@@ -290,6 +300,13 @@ func (s *Session) probeTTL(ctx context.Context, dest net.IP, ttl int, timeout ti
 	if !okReply {
 		h.timeout = true
 		h.stats.AddFailure(now)
+		if s.onSample != nil {
+			a := ""
+			if h.addr != nil {
+				a = h.addr.String()
+			}
+			s.onSample(ttl, a, now, -1)
+		}
 		return
 	}
 
@@ -299,6 +316,13 @@ func (s *Session) probeTTL(ctx context.Context, dest net.IP, ttl int, timeout ti
 	h.timeout = false
 	h.lastRTT = res.RTT
 	h.stats.AddSuccess(float64(res.RTT)/float64(time.Millisecond), now)
+	if s.onSample != nil {
+		a := ""
+		if h.addr != nil {
+			a = h.addr.String()
+		}
+		s.onSample(ttl, a, now, float64(res.RTT)/float64(time.Millisecond))
+	}
 	if res.Err == nil {
 		h.reached = true
 	}

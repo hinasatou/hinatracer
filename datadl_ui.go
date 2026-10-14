@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"hinatracer/i18n"
@@ -63,7 +62,7 @@ func (a *app) startDataDownload() {
 	if a.dataDL == nil || a.dataDL.Running() {
 		return
 	}
-	cfgDir := filepath.Dir(a.store.Path())
+	cfgDir := a.appDataDir()
 	specs := datadl.DefaultSpecs(a.draftIPDB, a.draftGeoIP, a.draftASN)
 	a.dataDLStatus = i18n.T("settings.dl_all.status.running")
 	ok := a.dataDL.Start(context.Background(), cfgDir, specs, func(results []datadl.Result) {
@@ -75,7 +74,22 @@ func (a *app) startDataDownload() {
 	a.requestUIUpdate()
 }
 
+// onDataDownloadDone runs on the download goroutine. App state is updated
+// via a.run (the UI thread when a window exists); the slow database reload
+// happens afterwards, off the UI thread.
 func (a *app) onDataDownloadDone(results []datadl.Result) {
+	var okN int
+	_ = a.run(func() { okN = a.applyDataDownloadResults(results) })
+	if okN > 0 {
+		a.reloadDBs()
+		a.refreshAllHostMeta()
+	}
+	a.requestUIUpdate()
+}
+
+// applyDataDownloadResults stores downloaded paths and the status text and
+// returns how many files succeeded.
+func (a *app) applyDataDownloadResults(results []datadl.Result) int {
 	okN, errN, cancelN := 0, 0, 0
 	for _, r := range results {
 		if r.Err != nil {
@@ -124,8 +138,6 @@ func (a *app) onDataDownloadDone(results []datadl.Result) {
 			c.ASNPath = a.cfg.ASNPath
 		})
 		a.cfg = a.store.Get()
-		a.reloadDBs()
-		a.refreshAllHostMeta()
 	}
 	switch {
 	case cancelN > 0 && okN == 0 && errN == 0:
@@ -137,5 +149,5 @@ func (a *app) onDataDownloadDone(results []datadl.Result) {
 	default:
 		a.dataDLStatus = i18n.Tf("settings.dl_all.status.ok", okN)
 	}
-	a.requestUIUpdate()
+	return okN
 }

@@ -101,6 +101,10 @@ jobs:
             exit 1
           fi
           cp "$deb" "dist/HinaTracer-v${VERSION}-linux-amd64.deb"
+          # Plain CGO-free binary (useful for containers / manual install)
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w"             -o "dist/HinaTracer-v${VERSION}-linux-amd64" .
+          # Headless server .deb (systemd unit, CAP_NET_RAW, no desktop GUI)
+          bash scripts/build-server-deb.sh "$VERSION" dist
           ls -la dist/
 
       - name: Package macOS

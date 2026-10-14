@@ -1,0 +1,33 @@
+[Unit]
+Description=HinaTracer WebUI server
+Documentation=https://github.com/hinasatou/hinatracer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hinatracer
+Group=hinatracer
+Environment=HINATRACER_CONFIG=/etc/hinatracer/config.json
+Environment=HINATRACER_DATA_DIR=/var/lib/hinatracer
+ExecStart=/usr/bin/hinatracer --web --server-mode --config /etc/hinatracer/config.json
+Restart=on-failure
+RestartSec=3
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/etc/hinatracer /var/lib/hinatracer
+# Logs go to the journal and to /var/lib/hinatracer/web.log
+
+[Install]
+WantedBy=multi-user.target
