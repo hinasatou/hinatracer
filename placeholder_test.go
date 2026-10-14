@@ -153,3 +153,39 @@ func TestRemotePingDBStatus(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// TestAutoStartHTTPOption: HTTP auto-start is an explicit startup option
+// (default off); starting/stopping no longer changes it, and a startup
+// request that omits a field keeps that field.
+func TestAutoStartHTTPOption(t *testing.T) {
+	f := newAccessFixture(t)
+	adm := caller{token: f.adminTok}
+	if f.a.cfg.AutoStartHTTP {
+		t.Fatal("default on")
+	}
+	get := func() (p, h, tr bool) {
+		on(f.a, func() { p, h, tr = f.a.cfg.AutoStartPing, f.a.cfg.AutoStartHTTP, f.a.cfg.AutoStartTrace })
+		return
+	}
+	if code, _ := f.do(t, adm, "POST", "/api/settings/startup", `{"autoStartPing":true,"autoStartHttp":true,"autoStartTrace":true}`, nil); code != 200 {
+		t.Fatal(code)
+	}
+	if p, h, tr := get(); !p || !h || !tr {
+		t.Fatal("not saved", p, h, tr)
+	}
+	f.do(t, adm, "POST", "/api/settings/startup", `{"autoStartPing":false}`, nil)
+	if p, h, tr := get(); p || !h || !tr {
+		t.Fatal("partial update", p, h, tr)
+	}
+	f.do(t, adm, "POST", "/api/http/stop", `{}`, nil)
+	if _, h, _ := get(); !h {
+		t.Fatal("stop changed the startup option")
+	}
+	_, b := f.do(t, adm, "GET", "/api/state", "", nil)
+	if !strings.Contains(string(b), `"autoStartHttp":true`) {
+		t.Fatal("state lacks autoStartHttp")
+	}
+	if !f.a.store.Get().AutoStartHTTP {
+		t.Fatal("not persisted")
+	}
+}

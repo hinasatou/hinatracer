@@ -1,0 +1,12 @@
+{
+  "webHost": "127.0.0.1",
+  "webPort": 8790,
+  "webAutoStart": true,
+  "language": "zh-CN",
+  "theme": "system",
+  "pingInterval": 1,
+  "pingTargets": [],
+  "traceTabs": [],
+  "pingHistorySave": true,
+  "pingHistoryDays": 90
+}

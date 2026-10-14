@@ -634,21 +634,24 @@ func mcpBaseTools() []mcpTool {
 			}},
 		{Name: "reload_databases", Title: "Reload IP databases", Write: true, Desc: "Reload the IP databases from disk.", Schema: jsObj(nil), Run: simple("/api/settings/reloaddb")},
 		{Name: "set_startup", Title: "Startup behaviour", Write: true,
-			Desc:   "Choose whether ping monitoring and traceroutes start automatically when HinaTracer starts. Omitted fields keep their value.",
-			Schema: jsObj(map[string]any{"autoStartPing": jsBool("Start ping monitoring at launch."), "autoStartTrace": jsBool("Start traceroute tabs at launch.")}),
+			Desc:   "Choose whether ping monitoring, HTTP monitoring and traceroutes start automatically when HinaTracer starts. Omitted fields keep their value.",
+			Schema: jsObj(map[string]any{"autoStartPing": jsBool("Start ping monitoring at launch."), "autoStartTrace": jsBool("Start traceroute tabs at launch."), "autoStartHttp": jsBool("Start HTTP monitoring at launch.")}),
 			Run: func(c mcpCall, a map[string]any) (any, error) {
 				st, err := c.state()
 				if err != nil {
 					return nil, err
 				}
-				p, t := st.Settings.AutoStartPing, st.Settings.AutoStartTrace
+				p, t, h := st.Settings.AutoStartPing, st.Settings.AutoStartTrace, st.Settings.AutoStartHTTP
 				if v, ok := argBool(a, "autoStartPing"); ok {
 					p = v
 				}
 				if v, ok := argBool(a, "autoStartTrace"); ok {
 					t = v
 				}
-				return c.post("/api/settings/startup", map[string]any{"autoStartPing": p, "autoStartTrace": t})
+				if v, ok := argBool(a, "autoStartHttp"); ok {
+					h = v
+				}
+				return c.post("/api/settings/startup", map[string]any{"autoStartPing": p, "autoStartTrace": t, "autoStartHttp": h})
 			}},
 		{Name: "set_update_settings", Title: "Update settings", Write: true,
 			Desc: "Update channel and whether to check for updates at launch; unskip forgets a skipped version. Omitted fields keep their value.",
@@ -732,9 +735,9 @@ func mcpBaseTools() []mcpTool {
 				}
 				return map[string]any{"csv": string(raw)}, nil
 			}},
-		{Name: "set_history", Title: "Ping history settings", Write: true,
-			Desc:   "Enable/disable saving ping history to disk and set retention days (1–3650). Omitted fields keep their value.",
-			Schema: jsObj(map[string]any{"save": jsBool("Save ping history to disk."), "days": jsInt("Retention days.")}),
+		{Name: "set_history", Title: "Monitoring history settings", Write: true,
+			Desc:   "Enable/disable saving monitoring history (Ping and HTTP history and table statistics) to disk and set retention days (1–3650). Omitted fields keep their value.",
+			Schema: jsObj(map[string]any{"save": jsBool("Save Ping and HTTP monitoring history and statistics to disk."), "days": jsInt("Retention days.")}),
 			Run: func(c mcpCall, a map[string]any) (any, error) {
 				body := map[string]any{}
 				if v, ok := argBool(a, "save"); ok {

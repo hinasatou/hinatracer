@@ -209,8 +209,8 @@ func TestHTTPMonitorEndToEnd(t *testing.T) {
 	if r1.OK || r1.Code != 401 {
 		t.Fatalf("row1 should fail with 401: %+v", r1)
 	}
-	if !a.cfg.AutoStartHTTP || len(a.store.Get().HTTPTargets) != 2 {
-		t.Fatal("targets / running state not persisted")
+	if a.cfg.AutoStartHTTP || len(a.store.Get().HTTPTargets) != 2 {
+		t.Fatal("targets not persisted, or Start changed the startup option")
 	}
 	// guest: no header values, no writes
 	for _, g := range []caller{{cookie: f.guestCooki}, {token: f.guestTok}} {

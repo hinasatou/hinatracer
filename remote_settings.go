@@ -17,6 +17,7 @@ type remoteServerUI struct {
 	lang, theme              string
 	ipdb, geoip, asn         string
 	startPing, startTrace    bool
+	startHTTP                bool
 	channel                  string
 	checkOnRun               bool
 	histSave                 bool
@@ -34,7 +35,7 @@ func (a *app) syncRemoteServerDraft(st wsState) {
 	s.lang = i18n.Name(st.Lang)
 	s.theme = themeDisplayName(st.Settings.Theme)
 	s.ipdb, s.geoip, s.asn = st.Settings.IPDB, st.Settings.GeoIP, st.Settings.ASN
-	s.startPing, s.startTrace = st.Settings.AutoStartPing, st.Settings.AutoStartTrace
+	s.startPing, s.startTrace, s.startHTTP = st.Settings.AutoStartPing, st.Settings.AutoStartTrace, st.Settings.AutoStartHTTP
 	s.channel = i18n.T("update.channel.stable")
 	if st.Settings.UpdateChannel == "prerelease" {
 		s.channel = i18n.T("update.channel.prerelease")
@@ -189,9 +190,13 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 	})
 	card(c, func() {
 		ui.Text(c, i18n.T("settings.startup")).FontSize(14).Bold()
-		if ui.Checkbox(c, &s.startPing, i18n.T("settings.autostart")).Disabled(ro).Changed() ||
-			ui.Checkbox(c, &s.startTrace, i18n.T("settings.autostart_trace")).Disabled(ro).Changed() {
-			a.remoteSet("/api/settings/startup", map[string]bool{"autoStartPing": s.startPing, "autoStartTrace": s.startTrace})
+		ui.Text(c, i18n.T("settings.startup_desc")).FontSize(12).TextColor(c.Theme().TextMuted)
+		// Evaluate every checkbox (no short-circuit) so all stay drawn.
+		ch1 := ui.Checkbox(c, &s.startPing, i18n.T("settings.autostart")).Disabled(ro).Changed()
+		ch2 := ui.Checkbox(c, &s.startHTTP, i18n.T("settings.autostart_http")).Disabled(ro).Changed()
+		ch3 := ui.Checkbox(c, &s.startTrace, i18n.T("settings.autostart_trace")).Disabled(ro).Changed()
+		if ch1 || ch2 || ch3 {
+			a.remoteSet("/api/settings/startup", map[string]bool{"autoStartPing": s.startPing, "autoStartHttp": s.startHTTP, "autoStartTrace": s.startTrace})
 		}
 	})
 	card(c, func() {

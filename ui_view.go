@@ -1333,6 +1333,7 @@ func (a *app) viewSettings(c *ui.Context) {
 				ui.Text(c, i18n.T("settings.startup")).FontSize(14).Bold()
 				ui.Text(c, i18n.T("settings.startup_desc")).FontSize(12).TextColor(t.TextMuted)
 				ui.Checkbox(c, &a.cfg.AutoStartPing, i18n.T("settings.autostart"))
+				ui.Checkbox(c, &a.cfg.AutoStartHTTP, i18n.T("settings.autostart_http"))
 				ui.Checkbox(c, &a.cfg.AutoStartTrace, i18n.T("settings.autostart_trace"))
 				if ui.Button(c, i18n.T("settings.save_startup")).Clicked() {
 					a.persist()

@@ -95,9 +95,9 @@ IP lookup:
 Settings:
   settings get
   settings set key=value...             keys: language, theme, ipdb, geoip, asn,
-                                        autoStartPing, autoStartTrace,
+                                        autoStartPing, autoStartTrace, autoStartHttp,
                                         updateChannel, updateCheckOnStart,
-                                        historySave, historyDays
+                                        historySave (Ping + HTTP history and stats), historyDays
   settings reloaddb
 
 Data and updates:
@@ -948,7 +948,7 @@ func (c *ctl) cmdSettings() error {
 		}
 		c.table([]string{"KEY", "VALUE"}, [][]string{
 			{"language", st.Lang}, {"theme", s.Theme}, {"ipdb", dash(s.IPDB)}, {"geoip", dash(s.GeoIP)}, {"asn", dash(s.ASN)},
-			{"autoStartPing", strconv.FormatBool(s.AutoStartPing)}, {"autoStartTrace", strconv.FormatBool(s.AutoStartTrace)},
+			{"autoStartPing", strconv.FormatBool(s.AutoStartPing)}, {"autoStartTrace", strconv.FormatBool(s.AutoStartTrace)}, {"autoStartHttp", strconv.FormatBool(s.AutoStartHTTP)},
 			{"updateChannel", s.UpdateChannel}, {"updateCheckOnStart", strconv.FormatBool(s.UpdateCheckOnStart)},
 			{"historySave", strconv.FormatBool(s.HistorySave)}, {"historyDays", strconv.Itoa(s.HistoryDays)},
 			{"databases", dash(s.DBStatus)}, {"configPath", dash(s.ConfigPath)},
@@ -999,6 +999,9 @@ func (c *ctl) cmdSettings() error {
 			case "autoStartTrace":
 				s.AutoStartTrace, err = parseBoolArg(v)
 				startup = true
+			case "autoStartHttp":
+				s.AutoStartHTTP, err = parseBoolArg(v)
+				startup = true
 			case "updateChannel":
 				if v != "stable" && v != "prerelease" {
 					err = errors.New("updateChannel must be stable or prerelease")
@@ -1026,7 +1029,7 @@ func (c *ctl) cmdSettings() error {
 			}
 		}
 		if startup {
-			if err := c.post("/api/settings/startup", map[string]any{"autoStartPing": s.AutoStartPing, "autoStartTrace": s.AutoStartTrace}); err != nil {
+			if err := c.post("/api/settings/startup", map[string]any{"autoStartPing": s.AutoStartPing, "autoStartTrace": s.AutoStartTrace, "autoStartHttp": s.AutoStartHTTP}); err != nil {
 				return err
 			}
 		}

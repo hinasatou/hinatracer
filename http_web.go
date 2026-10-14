@@ -124,14 +124,10 @@ func (a *app) webRoutesHTTP(mux *http.ServeMux) {
 	}))
 	mux.Handle("POST /api/http/start", mutate(a, func(struct{}) apiResult {
 		a.httpMgr.Start()
-		a.cfg.AutoStartHTTP = true
-		a.persist()
 		return apiResult{OK: true}
 	}))
 	mux.Handle("POST /api/http/stop", mutate(a, func(struct{}) apiResult {
 		a.httpMgr.Stop()
-		a.cfg.AutoStartHTTP = false
-		a.persist()
 		return apiResult{OK: true}
 	}))
 	mux.Handle("POST /api/http/reset", mutate(a, func(r idsReq) apiResult {

@@ -1252,11 +1252,11 @@
     root.append(H('section', { class: 'card' }, H('h3', { text: T('settings.dl_all.title') }), H('div', { class: 'desc', text: T('settings.dl_all.desc') }),
       H('div', { class: 'row' }, dlStart, dlCancel), files, dlStatus));
 
-    const asp = H('input', { type: 'checkbox' }), ast = H('input', { type: 'checkbox' });
-    const saveStartup = () => api('settings/startup', { autoStartPing: asp.checked, autoStartTrace: ast.checked });
-    asp.onchange = saveStartup; ast.onchange = saveStartup;
+    const asp = H('input', { type: 'checkbox' }), ast = H('input', { type: 'checkbox' }), ash = H('input', { type: 'checkbox' });
+    const saveStartup = () => api('settings/startup', { autoStartPing: asp.checked, autoStartHttp: ash.checked, autoStartTrace: ast.checked });
+    asp.onchange = saveStartup; ast.onchange = saveStartup; ash.onchange = saveStartup;
     root.append(H('section', { class: 'card' }, H('h3', { text: T('settings.startup') }), H('div', { class: 'desc', text: T('settings.startup_desc') }),
-      H('label', { class: 'row' }, asp, T('settings.autostart')), H('label', { class: 'row' }, ast, T('settings.autostart_trace'))));
+      H('label', { class: 'row' }, asp, T('settings.autostart')), H('label', { class: 'row' }, ash, T('settings.autostart_http')), H('label', { class: 'row' }, ast, T('settings.autostart_trace'))));
 
     const histSave = H('input', { type: 'checkbox' });
     const histDays = H('input', { type: 'number', min: '1', max: '3650', value: '90', placeholder: T('ph.history.days'), style: 'width:100px' });
@@ -1351,7 +1351,7 @@
         if (firstPaths) { firstPaths = false; }
         sync(ipdb, s.ipdb, 'ipdb'); sync(geo, s.geoip, 'geo'); sync(asn, s.asn, 'asn');
         dbs.textContent = s.dbLoading ? T('db.loading') : s.dbStatus;
-        sync(asp, s.autoStartPing, 'asp'); sync(ast, s.autoStartTrace, 'ast');
+        sync(asp, s.autoStartPing, 'asp'); sync(ash, s.autoStartHttp, 'ash'); sync(ast, s.autoStartTrace, 'ast');
         sync(histSave, !!s.historySave, 'histSave');
         if (document.activeElement !== histDays && histDays._v !== s.historyDays) { histDays.value = s.historyDays; histDays._v = s.historyDays; }
         if (histPath._v !== s.historyPath) { histPath.textContent = T('settings.history.desc', s.historyPath || ''); histPath._v = s.historyPath; }

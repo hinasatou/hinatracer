@@ -157,6 +157,7 @@ type wsState struct {
 		ASN                string `json:"asn"`
 		AutoStartPing      bool   `json:"autoStartPing"`
 		AutoStartTrace     bool   `json:"autoStartTrace"`
+		AutoStartHTTP      bool   `json:"autoStartHttp"`
 		Theme              string `json:"theme"`
 		UpdateChannel      string `json:"updateChannel"`
 		UpdateCheckOnStart bool   `json:"updateCheckOnStart"`
@@ -295,7 +296,7 @@ func (a *app) webBuildState() wsState {
 
 	st := &s.Settings
 	st.IPDB, st.GeoIP, st.ASN = a.draftIPDB, a.draftGeoIP, a.draftASN
-	st.AutoStartPing, st.AutoStartTrace = a.cfg.AutoStartPing, a.cfg.AutoStartTrace
+	st.AutoStartPing, st.AutoStartTrace, st.AutoStartHTTP = a.cfg.AutoStartPing, a.cfg.AutoStartTrace, a.cfg.AutoStartHTTP
 	st.Theme = a.cfg.Theme
 	if st.Theme == "" {
 		st.Theme = "system"

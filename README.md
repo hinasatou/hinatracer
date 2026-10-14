@@ -148,11 +148,11 @@ hinatracer help
 
 By default the commands connect to the saved WebUI address. Use `--server http://HOST:PORT` (or the `HINATRACER_SERVER` environment variable) for another machine and `--token TOKEN` (or `HINATRACER_TOKEN`) for the API token. Tables are printed by default; add `--json` for JSON.
 
-## Ping history and CSV export
+## Monitoring history and CSV export
 
 Open the detail window of a ping target (or a traceroute hop). Above the latency chart, choose a range: **Per probe**, **Per minute**, **Per hour**, **Per day**, **Per week** or **Per month**. Aggregated ranges show the average as a line, the min–max band, and loss % as red bars.
 
-On **Settings → Ping history**, tick **Save ping history to disk** and set how many days to keep (default 90). Data is stored as SQLite next to your other data files (`history.db`). Old raw samples are rolled up into minute/hour buckets automatically. When saving is off, only recent in-memory data is used.
+On **Settings → Monitoring history**, tick **Save monitoring history to disk** and set how many days to keep (default 90). This covers both Ping and HTTP monitoring: their history and the table statistics. Data is stored as SQLite next to your other data files (`history.db`). Old raw samples are rolled up into minute/hour buckets automatically. When saving is off, only recent in-memory data is used.
 
 **Export CSV** in the detail window (or `GET /api/history.csv`, or `hinatracer ping history <id> --csv`) writes columns `time,target,alias,ip,samples,avg,min,max,loss%`.
 
@@ -164,8 +164,9 @@ The **HTTP Monitor** page (below Ping Monitor) checks websites and APIs on a sch
 
 - Add one URL, or use **Batch add** with one URL per line (an alias may follow after a space).
 - Each target has its own settings (right-click → Edit): method GET / HEAD / POST / PUT / PATCH / DELETE / OPTIONS or a custom one (POST, PUT, PATCH, DELETE and custom methods can send a request body with a Content-Type of your choice), interval (default 30 s), timeout, expected status codes (for example `200-299,301` or `2xx`; empty means 200–399), a text or regular-expression match on the first 1 MB of the page (can be inverted), custom request headers, follow redirects, and ignore TLS certificate errors (off by default).
+- HTTP monitoring does not start by itself when HinaTracer opens unless **Settings → Startup → Auto-start HTTP monitoring on launch** is ticked (off by default, like Ping).
 - In the WebUI, drag the right edge of a column header to change its width; the browser remembers it per table (double-click the edge to reset).
-- The table has the same columns and handling as the Ping table: IP, location, region, ASN and ASN region, success/failure counts, success and failure rates, last/avg/min/max/median response time, status code, last check, last success and last failure. Click headers to sort, Ctrl/Shift-click to select several rows (right-click for actions on all of them), drag to reorder, and column widths are remembered. Double-click a row (or press Enter) for DNS / connect / TLS / TTFB timing, certificate days left and the trend chart (all ranges, CSV export). History is saved like ping history when saving is on.
+- The table has the same columns and handling as the Ping table: IP, location, region, ASN and ASN region, success/failure counts, success and failure rates, last/avg/min/max/median response time, status code, last check, last success and last failure. Click headers to sort, Ctrl/Shift-click to select several rows (right-click for actions on all of them), drag to reorder, and column widths are remembered. Double-click a row (or press Enter) for DNS / connect / TLS / TTFB timing, certificate days left and the trend chart (all ranges, CSV export). History is saved together with ping history when **Save monitoring history to disk** is on.
 - Header values are never written to logs and are hidden from guests.
 - The same functions are available in the WebUI, to AI clients (MCP) and on the command line (`hinatracer http list`, `http add <url> ...`, see `hinatracer help`).
 

@@ -100,7 +100,7 @@ type Config struct {
 	PingHistoryDays int `json:"pingHistoryDays,omitempty"`
 
 	// HTTPTargets are the HTTP monitor targets; AutoStartHTTP starts
-	// checking at launch.
+	// checking at launch (a startup option, default off like ping).
 	HTTPTargets   []HTTPTarget `json:"httpTargets,omitempty"`
 	AutoStartHTTP bool         `json:"autoStartHttp,omitempty"`
 

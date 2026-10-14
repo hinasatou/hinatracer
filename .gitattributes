@@ -1,0 +1,4 @@
+# Keep shell scripts and Debian packaging files LF on every platform
+# (Windows checkouts with core.autocrlf=true would otherwise add CR).
+*.sh text eol=lf
+packaging/** text eol=lf

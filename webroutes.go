@@ -441,8 +441,19 @@ func (a *app) webRoutes(mux *http.ServeMux) {
 		})
 		return apiResult{OK: true}
 	}))
-	mux.Handle("POST /api/settings/startup", mutate(a, func(r struct{ AutoStartPing, AutoStartTrace bool }) apiResult {
-		a.cfg.AutoStartPing, a.cfg.AutoStartTrace = r.AutoStartPing, r.AutoStartTrace
+	// Omitted fields keep their value.
+	mux.Handle("POST /api/settings/startup", mutate(a, func(r struct {
+		AutoStartPing, AutoStartTrace *bool
+		AutoStartHTTP                 *bool `json:"autoStartHttp"`
+	}) apiResult {
+		for _, f := range []struct {
+			v   *bool
+			dst *bool
+		}{{r.AutoStartPing, &a.cfg.AutoStartPing}, {r.AutoStartTrace, &a.cfg.AutoStartTrace}, {r.AutoStartHTTP, &a.cfg.AutoStartHTTP}} {
+			if f.v != nil {
+				*f.dst = *f.v
+			}
+		}
 		a.persist()
 		return apiResult{OK: true}
 	}))
