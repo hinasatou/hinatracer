@@ -14,15 +14,15 @@ import (
 )
 
 const (
-	appVersion = "1.1.2"
+	appVersion = "1.1.3"
 
 	// Default window sizes (a saved window-state.json overrides them).
 	mainWinW      = 1460
 	mainWinH      = 980
 	detailWinW    = 690
-	detailWinH    = 750
+	detailWinH    = 780
 	detailWinMinW = 560
-	detailWinMinH = 660
+	detailWinMinH = 690
 	appRepoURL    = "https://github.com/hinasatou/hinatracer"
 	contentMinH   = float32(200)
 	pageTableMinH = float32(280)
@@ -693,6 +693,7 @@ func (a *app) viewPing(c *ui.Context) {
 			{Title: i18n.T("ping.col.n"), ID: "#", Width: 44, Align: ui.Center, Sortable: true, Fixed: true},
 			{Title: i18n.T("ping.col.alias"), ID: "alias", Width: 100, Sortable: true},
 			{Title: i18n.T("ping.col.host"), ID: "host", Width: 148, Sortable: true},
+			{Title: i18n.T("ping.col.ip"), ID: "ip", Width: 128, Sortable: true},
 			{Title: i18n.T("ping.col.rdns"), ID: "rdns", Width: 160, Sortable: true},
 			{Title: i18n.T("ping.col.location"), ID: "location", Width: 140, Sortable: true},
 			{Title: i18n.T("ping.col.region"), ID: "region", Width: 140, Sortable: true},
@@ -773,6 +774,14 @@ func (a *app) viewPing(c *ui.Context) {
 						cellColor(txt)
 					})
 				case 3:
+					ip := a.pingIPOf(s)
+					txt := ui.Text(c, ip).SingleLine()
+					if muted {
+						cellColor(txt)
+					} else {
+						mutedIfPlaceholder(c, txt, ip)
+					}
+				case 4:
 					rdns := a.pingRDNSOf(s.Host)
 					txt := ui.Text(c, rdns).SingleLine()
 					if muted {
@@ -780,35 +789,35 @@ func (a *app) viewPing(c *ui.Context) {
 					} else {
 						mutedIfPlaceholder(c, txt, rdns)
 					}
-				case 4:
+				case 5:
 					txt := ui.Text(c, loc).SingleLine()
 					if muted {
 						cellColor(txt)
 					} else {
 						mutedIfPlaceholder(c, txt, loc)
 					}
-				case 5:
-					regionCell(c, iso, region)
 				case 6:
+					regionCell(c, iso, region)
+				case 7:
 					txt := ui.Text(c, meta.ASN).SingleLine()
 					if muted {
 						cellColor(txt)
 					} else {
 						mutedIfPlaceholder(c, txt, meta.ASN)
 					}
-				case 7:
-					regionCell(c, meta.ASNISO, meta.ASNRegion)
 				case 8:
+					regionCell(c, meta.ASNISO, meta.ASNRegion)
+				case 9:
 					txt := ui.Textf(c, "%d", s.Stats.Success).SingleLine()
 					cellColor(txt)
-				case 9:
+				case 10:
 					txt := ui.Textf(c, "%d", s.Stats.Failure).SingleLine()
 					if s.Stats.Failure > 0 && !muted {
 						txt.TextColor(t.Danger)
 					} else {
 						cellColor(txt)
 					}
-				case 10:
+				case 11:
 					rate := s.Stats.SuccessRate()
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Justify(ui.End).Children(func() {
 						if failing && !muted {
@@ -823,7 +832,7 @@ func (a *app) viewPing(c *ui.Context) {
 							txt.TextColor(t.Success)
 						}
 					})
-				case 11:
+				case 12:
 					lr := s.Stats.LossRate()
 					txt := ui.Textf(c, "%.1f%%", lr).SingleLine()
 					if lr > 0 && !muted {
@@ -831,25 +840,25 @@ func (a *app) viewPing(c *ui.Context) {
 					} else {
 						cellColor(txt)
 					}
-				case 12:
+				case 13:
 					txt := ui.Text(c, fmtLatency(s.Stats.Last, s.Stats.Success > 0)).SingleLine()
 					cellColor(txt)
-				case 13:
+				case 14:
 					txt := ui.Text(c, fmtLatency(s.Stats.Avg, s.Stats.Success > 0)).SingleLine()
 					cellColor(txt)
-				case 14:
+				case 15:
 					txt := ui.Text(c, fmtLatency(s.Stats.Min, s.Stats.Success > 0)).SingleLine()
 					cellColor(txt)
-				case 15:
+				case 16:
 					txt := ui.Text(c, fmtLatency(s.Stats.Max, s.Stats.Success > 0)).SingleLine()
 					cellColor(txt)
-				case 16:
+				case 17:
 					txt := ui.Text(c, fmtLatency(s.Stats.Median, s.Stats.Success > 0)).SingleLine()
 					cellColor(txt)
-				case 17:
+				case 18:
 					txt := ui.Text(c, fmtTime(s.Stats.LastOK)).SingleLine()
 					cellColor(txt)
-				case 18:
+				case 19:
 					txt := ui.Text(c, fmtTime(s.Stats.LastFail)).SingleLine()
 					if failing && !muted {
 						txt.TextColor(t.Danger)
@@ -1015,6 +1024,7 @@ func (a *app) viewPingDetail(c *ui.Context) {
 		rows := [][2]string{
 			{firstLabel, firstVal},
 			{i18n.T("detail.host"), s.Host},
+			{i18n.T("detail.ip"), a.pingIPOf(s)},
 			{i18n.T("detail.proto"), string(pinger.ProtoOf(s.Host))},
 			{i18n.T("detail.rdns"), a.pingRDNSOf(s.Host)},
 			{i18n.T("detail.location"), loc},
@@ -1055,7 +1065,7 @@ func (a *app) viewPingDetail(c *ui.Context) {
 		ui.Spacer(c)
 		ui.Row(c).Gap(10).Justify(ui.End).Children(func() {
 			if ui.Button(c, i18n.T("detail.copy_all")).Clicked() {
-				copyText(formatPingDetail(s, loc, iso, region, meta.ASN, meta.ASNISO, meta.ASNRegion, a.pingRDNSOf(s.Host), a.detailIsHop, a.detailHopTTL))
+				copyText(formatPingDetail(s, loc, iso, region, meta.ASN, meta.ASNISO, meta.ASNRegion, a.pingRDNSOf(s.Host), a.pingIPOf(s), a.detailIsHop, a.detailHopTTL))
 			}
 			if ui.Button(c, i18n.T("detail.traceroute")).Clicked() {
 				a.jumpToTrace(s.Host)
@@ -1069,7 +1079,7 @@ func (a *app) viewPingDetail(c *ui.Context) {
 	})
 }
 
-func formatPingDetail(s pinger.Snapshot, loc, iso, region, asnText, asnISO, asnRegion, rdns string, isHop bool, hopTTL int) string {
+func formatPingDetail(s pinger.Snapshot, loc, iso, region, asnText, asnISO, asnRegion, rdns, ip string, isHop bool, hopTTL int) string {
 	var b strings.Builder
 	if isHop {
 		b.WriteString(i18n.T("detail.hop_title"))
@@ -1084,6 +1094,7 @@ func formatPingDetail(s pinger.Snapshot, loc, iso, region, asnText, asnISO, asnR
 	pairs := [][2]string{
 		{firstLabel, firstVal},
 		{i18n.T("detail.host"), s.Host},
+		{i18n.T("detail.ip"), emptyDash(ip)},
 		{i18n.T("detail.proto"), string(pinger.ProtoOf(s.Host))},
 		{i18n.T("detail.rdns"), emptyDash(rdns)},
 		{i18n.T("detail.location"), loc},

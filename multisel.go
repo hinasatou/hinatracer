@@ -193,6 +193,7 @@ func (a *app) pingMenu(m *ui.Menu, display []pinger.Snapshot, keys []int, post *
 	copyItems := []struct{ label, v string }{
 		{i18n.T("ping.ctx.copy_alias"), s.Alias},
 		{i18n.T("ping.ctx.copy_host"), s.Host},
+		{i18n.T("ping.ctx.copy_ip"), a.pingIPOf(s)},
 		{i18n.T("ping.ctx.copy_rdns"), a.pingRDNSOf(s.Host)},
 		{i18n.T("ping.ctx.copy_location"), loc},
 		{i18n.T("ping.ctx.copy_region"), flagx.CopyLabel(iso, region)},

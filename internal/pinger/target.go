@@ -94,6 +94,7 @@ func ProtoOf(target string) Proto { return ParseTarget(target).Proto() }
 
 // ProbeResult is one probe outcome.
 type ProbeResult struct {
+	IP      string // destination IP actually probed ("" if unresolved)
 	RTT     time.Duration
 	OK      bool
 	Timeout bool
@@ -136,9 +137,18 @@ func Probe(target string, timeout time.Duration) ProbeResult {
 	if pt.Host == "" {
 		return ProbeResult{Err: errors.New("empty target")}
 	}
-	if pt.Port > 0 {
-		return TCPPing(pt.Host, pt.Port, timeout)
+	// Resolve once here so the result records exactly which IP was probed
+	// (domains may resolve differently over time).
+	ip, err := icmpx.ResolveIP(pt.Host)
+	if err != nil {
+		return ProbeResult{Err: err}
 	}
-	r := icmpx.Ping(pt.Host, 0, timeout)
-	return ProbeResult{RTT: r.RTT, OK: !r.Timeout && r.Err == nil, Timeout: r.Timeout, Err: r.Err}
+	ipStr := ip.String()
+	if pt.Port > 0 {
+		r := TCPPing(ipStr, pt.Port, timeout)
+		r.IP = ipStr
+		return r
+	}
+	r := icmpx.Ping(ipStr, 0, timeout)
+	return ProbeResult{IP: ipStr, RTT: r.RTT, OK: !r.Timeout && r.Err == nil, Timeout: r.Timeout, Err: r.Err}
 }

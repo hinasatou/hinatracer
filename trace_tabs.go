@@ -490,6 +490,9 @@ func (a *app) openHopDetail(h traceHopView) {
 	}
 	a.detailIsHop = true
 	a.detailHopTTL = h.TTL
+	if tab := a.activeTrace(); tab != nil {
+		a.detailHopTab = tab.ID
+	}
 	a.openDetailWindow(snap)
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,6 +123,9 @@ type app struct {
 	detailWin    *mygo.Window
 	detailIsHop  bool // true when showing a traceroute hop (not a ping target)
 	detailHopTTL int
+	detailHopTab int // trace tab ID the hop detail came from
+	// detailRedraw asks the details window to rebuild; replaced in tests.
+	detailRedraw func()
 
 	// settings drafts
 	draftIPDB      string
@@ -342,16 +346,63 @@ func (a *app) flushUIUpdate() {
 	snaps := a.pingMgr.Snapshots()
 	a.win.Update(func() {
 		defer recoverAndLog("ui.flush", false)
-		a.pingSnaps = snaps
-		if a.detailWin != nil {
-			for _, s := range snaps {
-				if s.ID == a.detailSnap.ID {
-					a.detailSnap = s
-					break
+		a.applyFlush(snaps)
+	})
+}
+
+// applyFlush runs on the main window's UI thread for each throttled update
+// (<=10/s): it refreshes the ping snapshots and the data shown by the
+// details window, then asks that window to rebuild. A window only rebuilds
+// on its own input or an Update to it, so without this the details window
+// changed only when the mouse moved over it.
+func (a *app) applyFlush(snaps []pinger.Snapshot) {
+	a.pingSnaps = snaps
+	if a.detailWin == nil && a.detailRedraw == nil {
+		return
+	}
+	if a.refreshDetailSnap(snaps) {
+		a.redrawDetail()
+	}
+}
+
+// refreshDetailSnap updates detailSnap from the latest ping or hop data and
+// reports whether a details window is showing.
+func (a *app) refreshDetailSnap(snaps []pinger.Snapshot) bool {
+	if a.detailIsHop {
+		for _, tab := range a.traceTabs {
+			if tab.ID != a.detailHopTab {
+				continue
+			}
+			tab.mu.Lock()
+			for _, h := range tab.Hops {
+				if h.TTL == a.detailHopTTL {
+					a.detailSnap.Stats = h.Stats
+					if h.Addr != "" && h.Addr != "*" {
+						a.detailSnap.Host = h.Addr
+					}
 				}
 			}
+			tab.mu.Unlock()
 		}
-	})
+		return true
+	}
+	for _, s := range snaps {
+		if s.ID == a.detailSnap.ID {
+			a.detailSnap = s
+			break
+		}
+	}
+	return true
+}
+
+func (a *app) redrawDetail() {
+	if a.detailRedraw != nil {
+		a.detailRedraw()
+		return
+	}
+	if w := a.detailWin; w != nil {
+		w.Update(func() {})
+	}
 }
 
 func (a *app) setDBStatus(loading bool, status string) {
@@ -889,6 +940,8 @@ func (a *app) sortedPingSnaps() []pinger.Snapshot {
 			cmp = strings.Compare(strings.ToLower(sa.Alias), strings.ToLower(sb.Alias))
 		case "host":
 			cmp = strings.Compare(strings.ToLower(sa.Host), strings.ToLower(sb.Host))
+		case "ip":
+			cmp = cmpIPText(a.pingIPOf(sa), a.pingIPOf(sb))
 		case "rdns":
 			cmp = strings.Compare(strings.ToLower(a.pingRDNSOf(sa.Host)), strings.ToLower(a.pingRDNSOf(sb.Host)))
 		case "success":
@@ -1244,4 +1297,43 @@ func copyText(s string) {
 		return
 	}
 	mygo.Clipboard.WriteText(s)
+}
+
+// pingIPOf returns the IP shown for a ping target: the IP the last probe
+// actually used (so it follows DNS changes), else the cached resolution.
+// Never resolves on the caller's goroutine.
+func (a *app) pingIPOf(s pinger.Snapshot) string {
+	if s.IP != "" {
+		return s.IP
+	}
+	m := a.hostMetaOf(s.Host)
+	if m.IP != "" {
+		return m.IP
+	}
+	if m.Resolving {
+		return i18n.T("cell.loading")
+	}
+	return "—"
+}
+
+// cmpIPText orders IP strings numerically: IPv4 before IPv6, non-IPs last.
+func cmpIPText(a, b string) int {
+	pa, ea := netip.ParseAddr(a)
+	pb, eb := netip.ParseAddr(b)
+	switch {
+	case ea != nil && eb != nil:
+		return strings.Compare(a, b)
+	case ea != nil:
+		return 1
+	case eb != nil:
+		return -1
+	}
+	pa, pb = pa.Unmap(), pb.Unmap()
+	if pa.Is4() != pb.Is4() {
+		if pa.Is4() {
+			return -1
+		}
+		return 1
+	}
+	return pa.Compare(pb)
 }

@@ -16,6 +16,7 @@ type Target struct {
 	Enabled bool
 	Stats   Stats
 	LastErr string
+	IP      string // last probed IP
 }
 
 // Snapshot is a UI-safe copy of a target.
@@ -28,6 +29,7 @@ type Snapshot struct {
 	Running bool
 	LastErr string
 	Proto   Proto
+	IP      string // IP last probed for this target ("" until the first probe)
 }
 
 // Manager periodically pings a list of targets.
@@ -178,6 +180,7 @@ func (m *Manager) Snapshots() []Snapshot {
 			Running: m.running,
 			LastErr: t.LastErr,
 			Proto:   ProtoOf(t.Host),
+			IP:      t.IP,
 		}
 	}
 	return out
@@ -297,6 +300,9 @@ func (m *Manager) pingAll() {
 			}
 			if !found {
 				return
+			}
+			if res.IP != "" {
+				t.IP = res.IP
 			}
 			if !res.OK {
 				t.Stats.AddFailure(now)

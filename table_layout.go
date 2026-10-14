@@ -27,7 +27,7 @@ func layoutEqual(a, b config.TableLayout) bool {
 // restoreLayouts applies saved column layouts to the tables.
 func (a *app) restoreLayouts() {
 	if l, ok := a.cfg.TableLayouts["ping"]; ok {
-		a.pingTable.Columns = fromCfgLayout(l)
+		a.pingTable.Columns = fromCfgLayout(migratePingLayout(l))
 	}
 	if l, ok := a.cfg.TableLayouts["lookup"]; ok {
 		a.lookupTable.Columns = fromCfgLayout(l)
@@ -85,3 +85,19 @@ func (a *app) flushLayouts() {
 }
 
 func (a *app) notePingLayout() { a.noteLayout("ping", a.pingTable.Columns) }
+
+// migratePingLayout inserts columns added after a layout was saved: "ip"
+// (1.1.3) goes right after "host". Without this a saved Order would leave
+// the new column at the far end.
+func migratePingLayout(l config.TableLayout) config.TableLayout {
+	if len(l.Order) == 0 || slices.Contains(l.Order, "ip") {
+		return l
+	}
+	order := slices.Clone(l.Order)
+	at := len(order)
+	if i := slices.Index(order, "host"); i >= 0 {
+		at = i + 1
+	}
+	l.Order = slices.Insert(order, at, "ip")
+	return l
+}
