@@ -127,3 +127,29 @@ func TestKeepOldWhenValidationFailsAfterExisting(t *testing.T) {
 		t.Fatalf("old file replaced: %q", data)
 	}
 }
+
+func TestSnapshotStableOrder(t *testing.T) {
+	m := NewManager()
+	specs := DefaultSpecs("", "", "")
+	m.mu.Lock()
+	m.progress = map[Kind]*Progress{}
+	m.order = nil
+	for _, s := range specs {
+		m.order = append(m.order, s.Kind)
+		m.progress[s.Kind] = &Progress{Kind: s.Kind, Filename: s.Filename, State: "running"}
+	}
+	m.mu.Unlock()
+	want := []string{DefaultIPDBName, DefaultGeoIPName, DefaultASNName}
+	for i := 0; i < 200; i++ {
+		m.setProg(specs[i%3].Kind, func(p *Progress) { p.Bytes += int64(i) })
+		snap := m.Snapshot()
+		if len(snap) != len(want) {
+			t.Fatalf("len %d", len(snap))
+		}
+		for j, p := range snap {
+			if p.Filename != want[j] {
+				t.Fatalf("iter %d row %d: got %s want %s", i, j, p.Filename, want[j])
+			}
+		}
+	}
+}

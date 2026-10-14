@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	appVersion = "1.1.3"
+	appVersion = "1.1.5"
 
 	// Default window sizes (a saved window-state.json overrides them).
 	mainWinW      = 1460
@@ -1270,7 +1270,7 @@ func (a *app) viewSettings(c *ui.Context) {
 						} else if p.State == "ok" {
 							col = t.Success
 						}
-						ui.Text(c, line).FontSize(12).TextColor(col)
+						ui.Text(c.Key("datadl-"+string(p.Kind)), line).FontSize(12).TextColor(col)
 					}
 				}
 				if a.dataDLStatus != "" {

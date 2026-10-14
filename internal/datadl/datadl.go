@@ -85,6 +85,7 @@ type Manager struct {
 	cancel   context.CancelFunc
 	running  atomic.Bool
 	progress map[Kind]*Progress
+	order    []Kind // spec order; Snapshot follows it so UI rows never reorder
 	onUpdate func()
 }
 
@@ -128,9 +129,9 @@ func (m *Manager) Cancel() {
 func (m *Manager) Snapshot() []Progress {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := make([]Progress, 0, len(m.progress))
-	for _, p := range m.progress {
-		if p != nil {
+	out := make([]Progress, 0, len(m.order))
+	for _, k := range m.order {
+		if p := m.progress[k]; p != nil {
 			out = append(out, *p)
 		}
 	}
@@ -175,7 +176,11 @@ func (m *Manager) Start(parent context.Context, configDir string, specs []FileSp
 	m.mu.Lock()
 	m.cancel = cancel
 	m.progress = map[Kind]*Progress{}
+	m.order = m.order[:0]
 	for _, s := range specs {
+		if _, dup := m.progress[s.Kind]; !dup {
+			m.order = append(m.order, s.Kind)
+		}
 		target := ResolveTargetPath(configDir, s.ConfigPath, s.Filename)
 		m.progress[s.Kind] = &Progress{
 			Kind: s.Kind, Filename: s.Filename, Target: target, State: "pending",
