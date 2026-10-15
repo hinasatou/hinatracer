@@ -167,6 +167,10 @@ func (a *app) startUpdateInstall() {
 				msg = i18n.T("update.err.canceled")
 			case errors.Is(err, update.ErrNeedManual):
 				msg = i18n.T("update.err.manual")
+			default:
+				if m, ok := updChecksumMsg(err); ok {
+					msg = m
+				}
 			}
 			a.updSet(func(s *updState) { s.phase, s.err, s.cancel = "error", msg, nil })
 			return
@@ -419,4 +423,19 @@ func (a *app) viewSettingsUpdate(c *ui.Context) {
 			})
 		}
 	})
+}
+
+// updChecksumMsg explains a failed SHA-256 verification (the update is
+// refused; nothing was replaced).
+func updChecksumMsg(err error) (string, bool) {
+	var ce *update.ErrChecksum
+	if !errors.As(err, &ce) {
+		return "", false
+	}
+	short := func(h string) string { return h[:min(12, len(h))] }
+	detail := i18n.Tf("update.err.checksum_missing", ce.Name)
+	if ce.Want != "" {
+		detail = i18n.Tf("update.err.checksum_mismatch", ce.Name, short(ce.Want), short(ce.Got))
+	}
+	return i18n.Tf("update.err.checksum", detail), true
 }

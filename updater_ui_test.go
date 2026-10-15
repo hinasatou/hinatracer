@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,5 +92,19 @@ func TestUpdateRateLimitAndDev(t *testing.T) {
 	}
 	if update.IsDevVersion(appVersion) {
 		t.Fatal("release version treated as dev")
+	}
+}
+
+func TestUpdChecksumMsg(t *testing.T) {
+	err := fmt.Errorf("verify: %w", &update.ErrChecksum{Name: "HinaTracer-v1.2.2-windows-amd64.zip", Want: "aaaaaaaaaaaaaaaa", Got: "bbbbbbbbbbbbbbbb"})
+	m, ok := updChecksumMsg(err)
+	if !ok || !strings.Contains(m, "aaaaaaaaaaaa") || !strings.Contains(m, "windows-amd64.zip") || strings.Contains(m, "aaaaaaaaaaaaa") {
+		t.Fatalf("%q", m)
+	}
+	if m, ok := updChecksumMsg(&update.ErrChecksum{Name: "SHA256SUMS.txt"}); !ok || !strings.Contains(m, "SHA256SUMS.txt") {
+		t.Fatalf("%q", m)
+	}
+	if _, ok := updChecksumMsg(errors.New("x")); ok {
+		t.Fatal("not a checksum error")
 	}
 }

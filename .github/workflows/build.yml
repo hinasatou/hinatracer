@@ -145,20 +145,44 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # One release run per tag at a time: a newer run cancels an older one,
+    # so two runs never upload into the same release.
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: true
     steps:
+      - name: Check the tag still points at this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          # Resolve the tag (annotated tags point at a tag object first).
+          ref="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}")"
+          type="$(jq -r .object.type <<<"$ref")"
+          sha="$(jq -r .object.sha <<<"$ref")"
+          if [[ "$type" == "tag" ]]; then
+            sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${sha}" --jq .object.sha)"
+          fi
+          if [[ "$sha" != "$GITHUB_SHA" ]]; then
+            echo "::error::Tag $TAG now points at $sha, but this run built $GITHUB_SHA (a stale re-run?). Refusing to touch the release."
+            exit 1
+          fi
+          echo "Tag $TAG -> $sha matches this run."
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
-      - name: Create draft release and upload assets
+
+      - name: Create or reset the draft release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           cd release-assets
-          ls -la
           find . -type f ! -name 'SHA256SUMS.txt' -print0 | while IFS= read -r -d '' f; do
             base="$(basename "$f")"
             if [[ "$f" != "./$base" ]]; then
@@ -166,14 +190,45 @@ jobs:
             fi
           done
           find . -type d -empty -delete || true
-          ls -la
+          rm -f SHA256SUMS.txt
           sha256sum HinaTracer-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; uploading/clobbering assets"
+            draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            if [[ "$draft" != "true" ]]; then
+              echo "::error::Release $TAG is already published. Refusing to change its assets; delete it or use a new tag."
+              exit 1
+            fi
+            echo "Draft release $TAG exists: removing its old assets first"
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' |
+              while IFS= read -r name; do
+                [[ -n "$name" ]] || continue
+                gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes
+              done
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --draft --verify-tag --title "$TAG" --generate-notes
           fi
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-            HinaTracer-* SHA256SUMS.txt
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" HinaTracer-* SHA256SUMS.txt
+
+      - name: Verify the uploaded assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          mkdir verify && cd verify
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"
+          ls -la
+          # every file listed must match, and nothing unlisted may be there
+          sha256sum -c SHA256SUMS.txt
+          listed="$(awk '{print $2}' SHA256SUMS.txt | sed 's/^\*//' | sort)"
+          present="$(find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort)"
+          if [[ "$listed" != "$present" ]]; then
+            echo "::error::Release assets and SHA256SUMS.txt differ:"
+            diff <(echo "$listed") <(echo "$present") || true
+            exit 1
+          fi
+          # and the sums must be the ones this run computed
+          cmp SHA256SUMS.txt ../release-assets/SHA256SUMS.txt
+          echo "All $(wc -l < SHA256SUMS.txt) assets verified."

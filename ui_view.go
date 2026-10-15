@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	appVersion = "1.2.1"
+	appVersion = "1.2.2"
 
 	// Default window sizes (a saved window-state.json overrides them).
 	mainWinW      = 1460
