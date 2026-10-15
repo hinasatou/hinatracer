@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -99,7 +98,7 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 	}
 	card(c, func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, i18n.T("remote.server.title")).FontSize(14).Bold()
+			cardTitle(c, i18n.T("remote.server.title"))
 			if ro {
 				ui.Badge(c, i18n.T("remote.readonly")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
 			}
@@ -136,7 +135,7 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 	})
 	if !ro {
 		card(c, func() {
-			ui.Text(c, i18n.T("settings.data")).FontSize(14).Bold()
+			cardTitle(c, i18n.T("settings.data"))
 			ui.Form(c, func() {
 				ui.Field(c, i18n.T("settings.ipdb"), func() { ui.TextInput(c, &s.ipdb).Placeholder(i18n.T("settings.ipdb_ph")).MinWidth(320) })
 				ui.Field(c, i18n.T("settings.geoip"), func() { ui.TextInput(c, &s.geoip).Placeholder(i18n.T("settings.geoip_ph")).MinWidth(320) })
@@ -156,7 +155,7 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 		})
 	}
 	card(c, func() {
-		ui.Text(c, i18n.T("settings.dl_all.title")).FontSize(14).Bold()
+		cardTitle(c, i18n.T("settings.dl_all.title"))
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			if !ro {
 				if st.DataDL.Running {
@@ -189,7 +188,7 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 		}
 	})
 	card(c, func() {
-		ui.Text(c, i18n.T("settings.startup")).FontSize(14).Bold()
+		cardTitle(c, i18n.T("settings.startup"))
 		ui.Text(c, i18n.T("settings.startup_desc")).FontSize(12).TextColor(c.Theme().TextMuted)
 		// Evaluate every checkbox (no short-circuit) so all stay drawn.
 		ch1 := ui.Checkbox(c, &s.startPing, i18n.T("settings.autostart")).Disabled(ro).Changed()
@@ -200,7 +199,7 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 		}
 	})
 	card(c, func() {
-		ui.Text(c, i18n.T("settings.history.title")).FontSize(14).Bold()
+		cardTitle(c, i18n.T("settings.history.title"))
 		ui.Row(c).Gap(10).AlignItems(ui.End).Wrap().Children(func() {
 			ui.Checkbox(c, &s.histSave, i18n.T("settings.history.save")).Disabled(ro)
 			ui.TextInput(c, &s.histDays).Placeholder(i18n.T("ph.history.days")).Label(i18n.T("settings.history.days")).Width(120).Disabled(ro)
@@ -215,7 +214,7 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 		})
 	})
 	card(c, func() {
-		ui.Text(c, i18n.T("update.settings.title")).FontSize(14).Bold()
+		cardTitle(c, i18n.T("update.settings.title"))
 		ui.Form(c, func() {
 			ui.Field(c, i18n.T("update.settings.channel"), func() {
 				if ui.Select(c, &s.channel, []string{i18n.T("update.channel.stable"), i18n.T("update.channel.prerelease")}).Disabled(ro).Changed() {
@@ -255,7 +254,7 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 		return
 	}
 	card(c, func() {
-		ui.Text(c, i18n.T("web.settings.title")).FontSize(14).Bold()
+		cardTitle(c, i18n.T("web.settings.title"))
 		ui.Row(c).Gap(10).AlignItems(ui.End).Wrap().Children(func() {
 			ui.TextInput(c, &s.webHost).Placeholder(i18n.T("ph.web.host")).Label(i18n.T("web.listen.host")).Width(180)
 			ui.TextInput(c, &s.webPort).Placeholder(i18n.T("ph.web.port")).Label(i18n.T("web.listen.port")).Width(100)
@@ -316,7 +315,7 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 			ui.Row(c.Key("rtok-" + tk.ID)).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
 				ui.Text(c, tk.Name).FontSize(12).Bold().SingleLine()
 				ui.Text(c, i18n.T("web.token.role."+tk.Role)).FontSize(12).TextColor(t.TextMuted)
-				ui.Text(c, i18n.Tf("web.token.created_at", time.UnixMilli(tk.Created).Format("2006-01-02 15:04"))).FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, i18n.Tf("web.token.created_at", fmtTokenCreated(tk.Created))).FontSize(11).TextColor(t.TextMuted)
 				ui.Spacer(c)
 				if ui.Button(c, i18n.T("web.token.revoke")).Clicked() {
 					id := tk.ID

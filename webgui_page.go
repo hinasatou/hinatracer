@@ -2,7 +2,6 @@ package main
 
 import (
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -228,7 +227,7 @@ func (a *app) viewWebTokens(c *ui.Context, st webserver.Status) {
 					role, bg, fg = i18n.T("web.token.role.admin"), t.Accent.Alpha(0.14), t.Accent
 				}
 				ui.Badge(c, role).Background(bg).TextColor(fg)
-				ui.Text(c, i18n.Tf("web.token.created_at", time.Unix(tk.Created, 0).Format("2006-01-02 15:04"))).FontSize(12).TextColor(t.TextMuted).Grow(1)
+				ui.Text(c, i18n.Tf("web.token.created_at", fmtTokenCreated(tk.Created))).FontSize(12).TextColor(t.TextMuted).Grow(1)
 				if ui.Button(c, i18n.T("web.token.revoke")).Clicked() {
 					revoke = tk.ID
 				}

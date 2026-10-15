@@ -286,7 +286,7 @@ func TestRemoteBackend(t *testing.T) {
 	}
 	b := freshApp(t)
 	defer b.pingMgr.Stop()
-	b.cfg.RemoteMode, b.cfg.RemoteURL, b.cfg.RemoteToken = true, f.srv.URL, tok
+	b.cfg.RemoteMode, b.cfg.RemoteURL, b.cfg.RemoteToken, b.cfg.RemoteAutoConnect = true, f.srv.URL, tok, true
 	b.persist()
 	raw, _ := os.ReadFile(b.store.Path())
 	if strings.Contains(string(raw), "admin-secret-pw") {

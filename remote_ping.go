@@ -35,6 +35,15 @@ func wsToPingSnap(r wsPing) pinger.Snapshot {
 	return s
 }
 
+// fmtTokenCreated formats an API token's creation time (unix seconds, as
+// the server stores it) in local time, as the WebUI shows it.
+func fmtTokenCreated(sec int64) string {
+	if sec <= 0 {
+		return "—"
+	}
+	return time.Unix(sec, 0).Local().Format("2006/01/02 15:04:05")
+}
+
 func msTime(ms int64) time.Time {
 	if ms == 0 {
 		return time.Time{}

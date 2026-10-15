@@ -41,6 +41,8 @@ sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"   # until reboot
 sudo setcap cap_net_raw+ep /path/to/hinatracer              # or this, once
 ```
 
+Either way traceroute / MTR shows every hop: with the capability (or as root, or the server package's service) HinaTracer uses a raw ICMP socket; without it, it uses the unprivileged ICMP socket and reads the routers' replies from the socket's error queue.
+
 **macOS: first launch.** The app is not signed by Apple, so Gatekeeper may block it. Right-click `HinaTracer.app` and choose **Open**, or run:
 
 ```bash
@@ -169,6 +171,9 @@ The **HTTP Monitor** page (below Ping Monitor) checks websites and APIs on a sch
 - The table has the same columns and handling as the Ping table: IP, location, region, ASN and ASN region, success/failure counts, success and failure rates, last/avg/min/max/median response time, status code, last check, last success and last failure. Click headers to sort, Ctrl/Shift-click to select several rows (right-click for actions on all of them), drag to reorder, and column widths are remembered. Double-click a row (or press Enter) for DNS / connect / TLS / TTFB timing, certificate days left and the trend chart (all ranges, CSV export). History is saved together with ping history when **Save monitoring history to disk** is on.
 - Header values are never written to logs and are hidden from guests.
 - The same functions are available in the WebUI, to AI clients (MCP) and on the command line (`hinatracer http list`, `http add <url> ...`, see `hinatracer help`).
+- In every table (Ping, HTTP, Traceroute hops, IP lookup — desktop app, remote mode and WebUI), Ctrl+A selects all rows and the right-click menu has **Copy column**: pick a column to copy that value of every selected row, one per line, in the order shown (empty values are left out).
+- **Desktop alerts** (Settings → Desktop alerts, desktop app only, all off by default): send a system notification when a target goes down (a set number of failures in a row (default 3)) or, optionally, recovers — bursts are grouped into one notification; show a tray icon (show window, start/stop all Ping or HTTP monitoring, quit) and optionally minimize to the tray when closing the window. Works with a remote data source too.
+- In remote data-source mode, Settings clearly separates **Local** settings (this computer only) from **Remote** server settings; local-only options that only apply after switching back are in a collapsed group.
 
 ## Remote mode (desktop app as a client)
 
@@ -178,6 +183,7 @@ Settings → **Data source** → **Remote WebUI** lets this window show and cont
 - The password is only used once to create an API token; it is never saved. The token is kept in your config file, which only your user can read.
 - While remote mode is on, local monitoring stops and the local WebUI page is disabled. The connection status is shown at the top and the app reconnects by itself.
 - Every page works as it does locally: Ping (add, import, edit, reorder, detail charts, CSV), Traceroute tabs, IP lookup and HTTP. As admin, Settings also shows **Remote server settings** (language, theme, data files and downloads, startup, history, updates, WebUI listen address, guest mode and API tokens of the server). Data source, theme and this computer's language stay local. Guests see everything read-only.
+- **Connect automatically at startup** (Settings → Data source, shown after connecting, off by default): the app starts in remote mode and connects with the saved token; if the server is unreachable it shows the status, keeps retrying, and offers **Switch back to local**.
 - Switch back with **Local** → **Switch back to local**.
 
 ## Server package (Debian/Ubuntu)

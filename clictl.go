@@ -1167,7 +1167,7 @@ func (c *ctl) cmdToken() error {
 		}
 		var rows [][]string
 		for _, t := range r.Data {
-			rows = append(rows, []string{t.ID, t.Name, t.Role, time.Unix(t.Created, 0).Format("2006-01-02 15:04")})
+			rows = append(rows, []string{t.ID, t.Name, t.Role, fmtTokenCreated(t.Created)})
 		}
 		c.table([]string{"ID", "NAME", "ROLE", "CREATED"}, rows)
 		return nil

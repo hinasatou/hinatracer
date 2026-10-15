@@ -28,7 +28,10 @@ import (
 )
 
 type app struct {
-	win *mygo.Window
+	alertThresh          float64    // 桌面提醒 down threshold draft
+	alerts               alertWatch // desktop alerts (notifications, tray)
+	settingsInactiveOpen bool       // remote mode: local-only settings group expanded
+	win                  *mygo.Window
 
 	store *config.Store
 	cfg   config.Config
@@ -892,6 +895,7 @@ func (a *app) applyLanguage(name string) {
 		code = name
 	}
 	i18n.SetLanguage(code)
+	syncNativeLocale(i18n.Language())
 	a.langName = i18n.Name(i18n.Language())
 	a.cfg.Language = i18n.Language()
 	a.themeName = themeDisplayName(a.cfg.Theme)
@@ -1380,8 +1384,11 @@ func copyText(s string) {
 	if s == "" {
 		return
 	}
-	mygo.Clipboard.WriteText(s)
+	writeClipboard(s)
 }
+
+// writeClipboard puts text on the system clipboard (swapped in tests).
+var writeClipboard = func(s string) { mygo.Clipboard.WriteText(s) }
 
 // pingIPOf returns the IP shown for a ping target: the IP the last probe
 // actually used (so it follows DNS changes), else the cached resolution.

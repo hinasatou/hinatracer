@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	appVersion = "1.2.0"
+	appVersion = "1.2.1"
 
 	// Default window sizes (a saved window-state.json overrides them).
 	mainWinW      = 1460
@@ -145,6 +145,15 @@ func card(c *ui.Context, body func()) ui.Element {
 	shadow := ui.RGBA(0, 0, 0, 0.06)
 	if t.Dark {
 		shadow = ui.RGBA(0, 0, 0, 0.45)
+	}
+	if cardScope == scopeRemote {
+		// remote server card: accent bar on the left, tinted background
+		return ui.Row(c).Padding(16, 16, 16, 12).Gap(12).Radius(12).Background(t.Background).
+			Border(1, t.Accent.Alpha(0.35)).Shadow(0, 1, 4, 0, shadow).
+			MinWidth(0).AlignSelf(ui.Stretch).Children(func() {
+			ui.Column(c).Width(3).Radius(2).Background(t.Accent).AlignSelf(ui.Stretch)
+			ui.Column(c).Gap(12).Grow(1).MinWidth(0).Children(body)
+		})
 	}
 	return ui.Column(c).Padding(16).Gap(12).Radius(12).Background(t.Background).
 		Border(1, t.Border).Shadow(0, 1, 4, 0, shadow).
@@ -418,26 +427,7 @@ func (a *app) viewTraceContent(c *ui.Context) {
 				}
 			})
 			display := a.sortedTraceHops(tab)
-			cols := []ui.TableColumn{
-				{Title: i18n.T("trace.col.ttl"), ID: "ttl", Width: 56, Align: ui.Center, Sortable: true, Fixed: true},
-				{Title: i18n.T("trace.col.ip"), ID: "ip", Width: 140, Sortable: true},
-				{Title: i18n.T("trace.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
-				{Title: i18n.T("trace.col.location"), ID: "location", Width: 130, Sortable: true},
-				{Title: i18n.T("trace.col.region"), ID: "region", Width: 130, Sortable: true},
-				{Title: i18n.T("trace.col.asn"), ID: "asn", Width: 160, Sortable: true},
-				{Title: i18n.T("trace.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
-				{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
-				{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
-				{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
-			}
+			cols := traceColumns()
 			nRows := len(display)
 			if nRows == 0 {
 				ui.Column(c).Padding(16).AlignItems(ui.Center).Gap(4).Children(func() {
@@ -756,28 +746,7 @@ func (a *app) viewPing(c *ui.Context) {
 
 	card(c, func() {
 		display := a.sortedPingSnaps()
-		cols := []ui.TableColumn{
-			{Title: i18n.T("ping.col.n"), ID: "#", Width: 44, Align: ui.Center, Sortable: true, Fixed: true},
-			{Title: i18n.T("ping.col.alias"), ID: "alias", Width: 100, Sortable: true},
-			{Title: i18n.T("ping.col.host"), ID: "host", Width: 148, Sortable: true},
-			{Title: i18n.T("ping.col.ip"), ID: "ip", Width: 128, Sortable: true},
-			{Title: i18n.T("ping.col.rdns"), ID: "rdns", Width: 160, Sortable: true},
-			{Title: i18n.T("ping.col.location"), ID: "location", Width: 140, Sortable: true},
-			{Title: i18n.T("ping.col.region"), ID: "region", Width: 140, Sortable: true},
-			{Title: i18n.T("ping.col.asn"), ID: "asn", Width: 180, Sortable: true},
-			{Title: i18n.T("ping.col.asn_region"), ID: "asn_region", Width: 140, Sortable: true},
-			{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
-			{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
-			{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
-		}
+		cols := pingColumns()
 		n := len(display)
 		if n == 0 {
 			ui.Column(c).Padding(12).AlignItems(ui.Center).Children(func() {
@@ -1242,9 +1211,15 @@ func (a *app) viewSettings(c *ui.Context) {
 	t := c.Theme()
 	ui.Scroll(c).Grow(1).Fill().MinWidth(0).MinHeight(0).TrackScroll(&a.settingsScroll).Children(func() {
 		ui.Column(c).Gap(14).MinWidth(0).Padding(0, 0, 8, 0).Children(func() {
+			if a.remote != nil {
+				cardScope = scopeLocal
+				defer func() { cardScope = scopeNone }()
+				ui.Text(c, i18n.T("settings.scope.intro")).FontSize(12).TextColor(t.TextMuted)
+				settingsGroupHeader(c, i18n.T("settings.scope.local_group"))
+			}
 			a.viewDataSource(c)
 			card(c, func() {
-				ui.Text(c, i18n.T("settings.appearance")).FontSize(14).Bold()
+				cardTitle(c, i18n.T("settings.appearance"))
 				ui.Form(c, func() {
 					ui.Field(c, i18n.T("settings.language"), func() {
 						names := i18n.Names()
@@ -1273,150 +1248,158 @@ func (a *app) viewSettings(c *ui.Context) {
 				langDir := filepath.Join(configDirHint(), "lang")
 				ui.Text(c, i18n.Tf("settings.lang_packs", langDir)).FontSize(12).TextColor(t.TextMuted)
 			})
+			a.viewSettingsAlerts(c)
 			if a.remote != nil {
-				// remote mode: the rest are the server's settings
-				a.viewRemoteServerSettings(c)
+				a.viewSettingsRemoteGroups(c)
 				return
 			}
-
-			card(c, func() {
-				ui.Text(c, i18n.T("settings.data")).FontSize(14).Bold()
-				ui.Text(c, i18n.T("settings.data_desc")).FontSize(12).TextColor(t.TextMuted)
-
-				ui.Form(c, func() {
-					ui.Field(c, i18n.T("settings.ipdb"), func() {
-						ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
-							ui.TextInput(c, &a.draftIPDB).Placeholder(i18n.T("settings.ipdb_ph")).Grow(1).MinWidth(0)
-							if ui.Button(c, i18n.T("settings.browse")).Clicked() {
-								a.pickFile(i18n.T("settings.pick_ipdb"), []string{"ipdb"}, &a.draftIPDB)
-							}
-						})
-					}).Description(i18n.T("settings.ipdb_desc"))
-
-					ui.Field(c, i18n.T("settings.geoip"), func() {
-						ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
-							ui.TextInput(c, &a.draftGeoIP).Placeholder(i18n.T("settings.geoip_ph")).Grow(1).MinWidth(0)
-							if ui.Button(c, i18n.T("settings.browse")).Clicked() {
-								a.pickFile(i18n.T("settings.pick_geoip"), []string{"mmdb"}, &a.draftGeoIP)
-							}
-						})
-					}).Description(i18n.T("settings.geoip_desc"))
-
-					ui.Field(c, i18n.T("settings.asn"), func() {
-						ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
-							ui.TextInput(c, &a.draftASN).Placeholder(i18n.T("settings.asn_ph")).Grow(1).MinWidth(0)
-							if ui.Button(c, i18n.T("settings.browse")).Clicked() {
-								a.pickFile(i18n.T("settings.pick_asn"), []string{"tsv", "gz"}, &a.draftASN)
-							}
-						})
-					}).Description(i18n.T("settings.asn_desc"))
-				})
-
-				ui.Row(c).Gap(10).Wrap().Children(func() {
-					if ui.PrimaryButton(c, i18n.T("settings.save_load")).Clicked() {
-						a.saveSettings()
-					}
-					if ui.Button(c, i18n.T("settings.reload")).Clicked() {
-						go func() {
-							a.reloadDBs()
-							a.refreshAllHostMeta()
-							a.requestUIUpdate()
-						}()
-					}
-				})
-				if _, dbStat := a.getDBStatus(); dbStat != "" {
-					ui.Text(c, dbStat).FontSize(12).TextColor(t.TextMuted)
-				}
-			})
-
-			card(c, func() {
-				ui.Text(c, i18n.T("settings.startup")).FontSize(14).Bold()
-				ui.Text(c, i18n.T("settings.startup_desc")).FontSize(12).TextColor(t.TextMuted)
-				ui.Checkbox(c, &a.cfg.AutoStartPing, i18n.T("settings.autostart"))
-				ui.Checkbox(c, &a.cfg.AutoStartHTTP, i18n.T("settings.autostart_http"))
-				ui.Checkbox(c, &a.cfg.AutoStartTrace, i18n.T("settings.autostart_trace"))
-				if ui.Button(c, i18n.T("settings.save_startup")).Clicked() {
-					a.persist()
-				}
-			})
-
-			a.viewSettingsUpdate(c)
-			a.viewSettingsHistory(c)
-
-			card(c, func() {
-				ui.Text(c, i18n.T("settings.dl_all.title")).FontSize(14).Bold()
-				ui.Text(c, i18n.T("settings.dl_all.desc")).FontSize(12).TextColor(t.TextMuted)
-				running := a.dataDL != nil && a.dataDL.Running()
-				ui.Row(c).Gap(10).Wrap().Children(func() {
-					btn := ui.PrimaryButton(c, i18n.T("settings.dl_all.start"))
-					if running {
-						btn.Disabled(true)
-					}
-					if btn.Clicked() && !running {
-						a.startDataDownload()
-					}
-					cbtn := ui.Button(c, i18n.T("settings.dl_all.cancel"))
-					if !running {
-						cbtn.Disabled(true)
-					}
-					if cbtn.Clicked() && running {
-						a.dataDL.Cancel()
-					}
-				})
-				if a.dataDL != nil {
-					for _, p := range a.dataDL.Snapshot() {
-						line := formatDataDLProgress(p)
-						col := t.TextMuted
-						if p.State == "error" {
-							col = t.Danger
-						} else if p.State == "ok" {
-							col = t.Success
-						}
-						ui.Text(c.Key("datadl-"+string(p.Kind)), line).FontSize(12).TextColor(col)
-					}
-				}
-				if a.dataDLStatus != "" {
-					ui.Text(c, a.dataDLStatus).FontSize(12).TextColor(t.TextMuted)
-				}
-			})
-
-			card(c, func() {
-				ui.Text(c, i18n.T("settings.downloads")).FontSize(14).Bold()
-				ui.Column(c).Gap(8).Children(func() {
-					ui.Text(c, i18n.T("settings.dl.ipdb")).FontSize(13)
-					ui.Text(c, "  https://github.com/nmgliangwei/qqwry.ipdb").FontSize(12).TextColor(t.Accent)
-					ui.Text(c, "  https://cdn.bili33.top/gh/nmgliangwei/qqwry.ipdb@main/qqwry.ipdb").FontSize(12).TextColor(t.TextMuted)
-					ui.Text(c, "  https://cdn.jsdelivr.net/npm/qqwry.ipdb/qqwry.ipdb").FontSize(12).TextColor(t.TextMuted)
-					if ui.Button(c, i18n.T("settings.dl.open_ipdb")).Clicked() {
-						go mygoShellOpen("https://github.com/nmgliangwei/qqwry.ipdb")
-					}
-					ui.Text(c, i18n.T("settings.dl.geoip")).FontSize(13)
-					ui.Text(c, "  https://github.com/Loyalsoldier/geoip/releases").FontSize(12).TextColor(t.Accent)
-					ui.Text(c, "  https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/Country.mmdb").FontSize(12).TextColor(t.TextMuted)
-					if ui.Button(c, i18n.T("settings.dl.open_geoip")).Clicked() {
-						go mygoShellOpen("https://github.com/Loyalsoldier/geoip/releases")
-					}
-					ui.Text(c, i18n.T("settings.dl.asn")).FontSize(13)
-					ui.Text(c, "  https://iptoasn.com/data/ip2asn-combined.tsv.gz").FontSize(12).TextColor(t.Accent)
-					ui.Text(c, "  https://iptoasn.com/").FontSize(12).TextColor(t.TextMuted)
-					if ui.Button(c, i18n.T("settings.dl.open_asn")).Clicked() {
-						go mygoShellOpen("https://iptoasn.com/")
-					}
-				})
-			})
-
-			card(c, func() {
-				ui.Text(c, i18n.T("settings.flags")).FontSize(14).Bold()
-				ui.Text(c, i18n.T("settings.flags_desc")).FontSize(12).TextColor(t.TextMuted)
-			})
-
-			card(c, func() {
-				ui.Text(c, i18n.T("settings.config")).FontSize(14).Bold()
-				ui.Text(c, i18n.T("settings.config_desc")).FontSize(12).TextColor(t.TextMuted)
-				ui.Text(c, a.store.Path()).FontSize(12)
-				ui.Text(c, i18n.Tf("settings.config_dir", configDirHint())).FontSize(12).TextColor(t.TextMuted)
-			})
+			a.viewLocalOnlySettings(c)
 		})
+	})
+}
+
+// viewLocalOnlySettings are the cards that configure this computer's own
+// monitoring (data files, startup, history, downloads, config).
+func (a *app) viewLocalOnlySettings(c *ui.Context) {
+	t := c.Theme()
+	card(c, func() {
+		cardTitle(c, i18n.T("settings.data"))
+		ui.Text(c, i18n.T("settings.data_desc")).FontSize(12).TextColor(t.TextMuted)
+
+		ui.Form(c, func() {
+			ui.Field(c, i18n.T("settings.ipdb"), func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+					ui.TextInput(c, &a.draftIPDB).Placeholder(i18n.T("settings.ipdb_ph")).Grow(1).MinWidth(0)
+					if ui.Button(c, i18n.T("settings.browse")).Clicked() {
+						a.pickFile(i18n.T("settings.pick_ipdb"), []string{"ipdb"}, &a.draftIPDB)
+					}
+				})
+			}).Description(i18n.T("settings.ipdb_desc"))
+
+			ui.Field(c, i18n.T("settings.geoip"), func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+					ui.TextInput(c, &a.draftGeoIP).Placeholder(i18n.T("settings.geoip_ph")).Grow(1).MinWidth(0)
+					if ui.Button(c, i18n.T("settings.browse")).Clicked() {
+						a.pickFile(i18n.T("settings.pick_geoip"), []string{"mmdb"}, &a.draftGeoIP)
+					}
+				})
+			}).Description(i18n.T("settings.geoip_desc"))
+
+			ui.Field(c, i18n.T("settings.asn"), func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+					ui.TextInput(c, &a.draftASN).Placeholder(i18n.T("settings.asn_ph")).Grow(1).MinWidth(0)
+					if ui.Button(c, i18n.T("settings.browse")).Clicked() {
+						a.pickFile(i18n.T("settings.pick_asn"), []string{"tsv", "gz"}, &a.draftASN)
+					}
+				})
+			}).Description(i18n.T("settings.asn_desc"))
+		})
+
+		ui.Row(c).Gap(10).Wrap().Children(func() {
+			if ui.PrimaryButton(c, i18n.T("settings.save_load")).Clicked() {
+				a.saveSettings()
+			}
+			if ui.Button(c, i18n.T("settings.reload")).Clicked() {
+				go func() {
+					a.reloadDBs()
+					a.refreshAllHostMeta()
+					a.requestUIUpdate()
+				}()
+			}
+		})
+		if _, dbStat := a.getDBStatus(); dbStat != "" {
+			ui.Text(c, dbStat).FontSize(12).TextColor(t.TextMuted)
+		}
+	})
+
+	card(c, func() {
+		cardTitle(c, i18n.T("settings.startup"))
+		ui.Text(c, i18n.T("settings.startup_desc")).FontSize(12).TextColor(t.TextMuted)
+		ui.Checkbox(c, &a.cfg.AutoStartPing, i18n.T("settings.autostart"))
+		ui.Checkbox(c, &a.cfg.AutoStartHTTP, i18n.T("settings.autostart_http"))
+		ui.Checkbox(c, &a.cfg.AutoStartTrace, i18n.T("settings.autostart_trace"))
+		if ui.Button(c, i18n.T("settings.save_startup")).Clicked() {
+			a.persist()
+		}
+	})
+
+	if a.remote == nil {
+		a.viewSettingsUpdate(c)
+	}
+	a.viewSettingsHistory(c)
+
+	card(c, func() {
+		cardTitle(c, i18n.T("settings.dl_all.title"))
+		ui.Text(c, i18n.T("settings.dl_all.desc")).FontSize(12).TextColor(t.TextMuted)
+		running := a.dataDL != nil && a.dataDL.Running()
+		ui.Row(c).Gap(10).Wrap().Children(func() {
+			btn := ui.PrimaryButton(c, i18n.T("settings.dl_all.start"))
+			if running {
+				btn.Disabled(true)
+			}
+			if btn.Clicked() && !running {
+				a.startDataDownload()
+			}
+			cbtn := ui.Button(c, i18n.T("settings.dl_all.cancel"))
+			if !running {
+				cbtn.Disabled(true)
+			}
+			if cbtn.Clicked() && running {
+				a.dataDL.Cancel()
+			}
+		})
+		if a.dataDL != nil {
+			for _, p := range a.dataDL.Snapshot() {
+				line := formatDataDLProgress(p)
+				col := t.TextMuted
+				if p.State == "error" {
+					col = t.Danger
+				} else if p.State == "ok" {
+					col = t.Success
+				}
+				ui.Text(c.Key("datadl-"+string(p.Kind)), line).FontSize(12).TextColor(col)
+			}
+		}
+		if a.dataDLStatus != "" {
+			ui.Text(c, a.dataDLStatus).FontSize(12).TextColor(t.TextMuted)
+		}
+	})
+
+	card(c, func() {
+		cardTitle(c, i18n.T("settings.downloads"))
+		ui.Column(c).Gap(8).Children(func() {
+			ui.Text(c, i18n.T("settings.dl.ipdb")).FontSize(13)
+			ui.Text(c, "  https://github.com/nmgliangwei/qqwry.ipdb").FontSize(12).TextColor(t.Accent)
+			ui.Text(c, "  https://cdn.bili33.top/gh/nmgliangwei/qqwry.ipdb@main/qqwry.ipdb").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, "  https://cdn.jsdelivr.net/npm/qqwry.ipdb/qqwry.ipdb").FontSize(12).TextColor(t.TextMuted)
+			if ui.Button(c, i18n.T("settings.dl.open_ipdb")).Clicked() {
+				go mygoShellOpen("https://github.com/nmgliangwei/qqwry.ipdb")
+			}
+			ui.Text(c, i18n.T("settings.dl.geoip")).FontSize(13)
+			ui.Text(c, "  https://github.com/Loyalsoldier/geoip/releases").FontSize(12).TextColor(t.Accent)
+			ui.Text(c, "  https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/Country.mmdb").FontSize(12).TextColor(t.TextMuted)
+			if ui.Button(c, i18n.T("settings.dl.open_geoip")).Clicked() {
+				go mygoShellOpen("https://github.com/Loyalsoldier/geoip/releases")
+			}
+			ui.Text(c, i18n.T("settings.dl.asn")).FontSize(13)
+			ui.Text(c, "  https://iptoasn.com/data/ip2asn-combined.tsv.gz").FontSize(12).TextColor(t.Accent)
+			ui.Text(c, "  https://iptoasn.com/").FontSize(12).TextColor(t.TextMuted)
+			if ui.Button(c, i18n.T("settings.dl.open_asn")).Clicked() {
+				go mygoShellOpen("https://iptoasn.com/")
+			}
+		})
+	})
+
+	card(c, func() {
+		cardTitle(c, i18n.T("settings.flags"))
+		ui.Text(c, i18n.T("settings.flags_desc")).FontSize(12).TextColor(t.TextMuted)
+	})
+
+	card(c, func() {
+		cardTitle(c, i18n.T("settings.config"))
+		ui.Text(c, i18n.T("settings.config_desc")).FontSize(12).TextColor(t.TextMuted)
+		ui.Text(c, a.store.Path()).FontSize(12)
+		ui.Text(c, i18n.Tf("settings.config_dir", configDirHint())).FontSize(12).TextColor(t.TextMuted)
 	})
 }
 
@@ -1452,4 +1435,54 @@ func (a *app) pingDBStatus() (loading bool, status string) {
 		return st.Settings.DBLoading, st.Settings.DBStatus
 	}
 	return a.getDBStatus()
+}
+
+// traceColumns are the table columns (also listed by the copy-column menu).
+func traceColumns() []ui.TableColumn {
+	return []ui.TableColumn{
+		{Title: i18n.T("trace.col.ttl"), ID: "ttl", Width: 56, Align: ui.Center, Sortable: true, Fixed: true},
+		{Title: i18n.T("trace.col.ip"), ID: "ip", Width: 140, Sortable: true},
+		{Title: i18n.T("trace.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
+		{Title: i18n.T("trace.col.location"), ID: "location", Width: 130, Sortable: true},
+		{Title: i18n.T("trace.col.region"), ID: "region", Width: 130, Sortable: true},
+		{Title: i18n.T("trace.col.asn"), ID: "asn", Width: 160, Sortable: true},
+		{Title: i18n.T("trace.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
+		{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
+		{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
+	}
+}
+
+// pingColumns are the table columns (also listed by the copy-column menu).
+func pingColumns() []ui.TableColumn {
+	return []ui.TableColumn{
+		{Title: i18n.T("ping.col.n"), ID: "#", Width: 44, Align: ui.Center, Sortable: true, Fixed: true},
+		{Title: i18n.T("ping.col.alias"), ID: "alias", Width: 100, Sortable: true},
+		{Title: i18n.T("ping.col.host"), ID: "host", Width: 148, Sortable: true},
+		{Title: i18n.T("ping.col.ip"), ID: "ip", Width: 128, Sortable: true},
+		{Title: i18n.T("ping.col.rdns"), ID: "rdns", Width: 160, Sortable: true},
+		{Title: i18n.T("ping.col.location"), ID: "location", Width: 140, Sortable: true},
+		{Title: i18n.T("ping.col.region"), ID: "region", Width: 140, Sortable: true},
+		{Title: i18n.T("ping.col.asn"), ID: "asn", Width: 180, Sortable: true},
+		{Title: i18n.T("ping.col.asn_region"), ID: "asn_region", Width: 140, Sortable: true},
+		{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
+		{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
+		{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
+	}
 }

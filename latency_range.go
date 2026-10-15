@@ -80,30 +80,56 @@ func chartNearest(n int, plotW, px float32) int {
 	return max(0, min(n-1, i))
 }
 
-// chartTipLines is the crosshair tooltip text for point i.
-func chartTipLines(m rangeChartModel, i int) []string {
+// chartTip is one tooltip line; kind picks its dot: tipTime (no dot,
+// small muted), tipValue (accent), tipLoss (danger), tipInfo (muted).
+type chartTip struct {
+	Text string
+	Kind int
+}
+
+const (
+	tipTime = iota
+	tipValue
+	tipLoss
+	tipInfo
+)
+
+// chartTipItems is the crosshair tooltip content for point i.
+func chartTipItems(m rangeChartModel, i int) []chartTip {
 	p := m.Pts[i]
-	var out []string
+	var out []chartTip
+	add := func(k int, s string) { out = append(out, chartTip{s, k}) }
 	if !p.At.IsZero() {
-		out = append(out, p.At.Local().Format(bucketTimeFmt(m.Range)))
+		add(tipTime, p.At.Local().Format(bucketTimeFmt(m.Range)))
 	} else {
-		out = append(out, i18n.Tf("chart.tip.index", i+1))
+		add(tipTime, i18n.Tf("chart.tip.index", i+1))
 	}
 	if m.Range == history.RangeProbe {
 		if p.OK {
-			out = append(out, i18n.Tf("chart.tip.latency", fmtAxisMs2(p.Avg)))
+			add(tipValue, i18n.Tf("chart.tip.latency", fmtAxisMs2(p.Avg)))
 		} else {
-			out = append(out, i18n.T("chart.tip.lost"))
+			add(tipLoss, i18n.T("chart.tip.lost"))
 		}
 	} else {
 		if p.OK {
-			out = append(out, i18n.Tf("chart.tip.avg", fmtAxisMs2(p.Avg)),
-				i18n.Tf("chart.tip.min", fmtAxisMs2(p.Min)), i18n.Tf("chart.tip.max", fmtAxisMs2(p.Max)))
+			add(tipValue, i18n.Tf("chart.tip.avg", fmtAxisMs2(p.Avg)))
+			add(tipInfo, i18n.Tf("chart.tip.min", fmtAxisMs2(p.Min)))
+			add(tipInfo, i18n.Tf("chart.tip.max", fmtAxisMs2(p.Max)))
 		}
-		out = append(out, i18n.Tf("chart.tip.loss", fmt.Sprintf("%.1f%%", p.LossPct)), i18n.Tf("chart.tip.samples", p.Samples))
+		add(tipLoss, i18n.Tf("chart.tip.loss", fmt.Sprintf("%.1f%%", p.LossPct)))
+		add(tipInfo, i18n.Tf("chart.tip.samples", p.Samples))
 	}
 	if p.Code > 0 {
-		out = append(out, i18n.Tf("chart.tip.code", p.Code))
+		add(tipInfo, i18n.Tf("chart.tip.code", p.Code))
+	}
+	return out
+}
+
+// chartTipLines is the crosshair tooltip text for point i.
+func chartTipLines(m rangeChartModel, i int) []string {
+	var out []string
+	for _, it := range chartTipItems(m, i) {
+		out = append(out, it.Text)
 	}
 	return out
 }
@@ -147,9 +173,17 @@ func (a *app) rangeChart(c *ui.Context, sel *int, pts []history.Point, rng histo
 		var hov bool
 		el := ui.Column(c).Height(150).MinWidth(0).Radius(8).Background(t.Surface).Border(1, t.Border).
 			Draw(func(p *ui.Painter, r ui.Rect) {
-				paintRangeChart(p, r, m, loading, t)
+				var pill ui.Rect
+				var xh *crosshair
 				if hov {
-					paintCrosshair(p, r, m, hx, hy, t)
+					xh = makeCrosshair(p, r, m, hx, hy)
+					if xh != nil {
+						pill = xh.timePill
+					}
+				}
+				paintRangeChart(p, r, m, loading, t, pill)
+				if xh != nil {
+					paintCrosshair(p, r, m, xh, t)
 				}
 			})
 		hx, hy, hov = el.PointerPosition()
@@ -173,7 +207,9 @@ func chartPlot(r ui.Rect) ui.Rect {
 	return ui.Rect{X: r.X + chartPadL, Y: r.Y + chartPadT, W: r.W - chartPadL - chartPadR, H: r.H - chartPadT - chartPadB}
 }
 
-func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, t *ui.Theme) {
+// paintRangeChart draws the chart; x-axis labels that would fall under
+// skip (the crosshair's time pill) are left out.
+func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, t *ui.Theme, skip ui.Rect) {
 	plot := chartPlot(r)
 	if plot.W <= 4 || plot.H <= 4 {
 		return
@@ -200,9 +236,14 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 		tf := bucketTimeFmt(m.Range)
 		first, last = m.Pts[0].At.Local().Format(tf), m.Pts[n-1].At.Local().Format(tf)
 	}
-	p.Text(plot.X, plot.Y+plot.H+3, first, 10, muted)
+	fw, _ := p.MeasureText(0, ui.Span{Text: first, Size: 10})
+	if !spanOverlaps(plot.X, plot.X+fw, skip) {
+		p.Text(plot.X, plot.Y+plot.H+3, first, 10, muted)
+	}
 	lw, _ := p.MeasureText(0, ui.Span{Text: last, Size: 10})
-	p.Text(plot.X+plot.W-lw, plot.Y+plot.H+3, last, 10, muted)
+	if !spanOverlaps(plot.X+plot.W-lw, plot.X+plot.W, skip) {
+		p.Text(plot.X+plot.W-lw, plot.Y+plot.H+3, last, 10, muted)
+	}
 	step := plot.W
 	if n > 1 {
 		step = plot.W / float32(n-1)
@@ -290,56 +331,150 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 	seg(start, n-1)
 }
 
-// paintCrosshair draws the stock-chart style crosshair: a vertical line at
-// the nearest point, a horizontal line at the pointer, value/time labels
-// on the axes and a tooltip.
-func paintCrosshair(p *ui.Painter, r ui.Rect, m rangeChartModel, hx, hy float32, t *ui.Theme) {
+// spanOverlaps reports whether [x0,x1] meets the x extent of r (with a
+// little gap); a zero r meets nothing.
+func spanOverlaps(x0, x1 float32, r ui.Rect) bool {
+	if r.W <= 0 {
+		return false
+	}
+	return x1+4 > r.X && x0-4 < r.X+r.W
+}
+
+// crosshair is the hover state of a range chart: the nearest point, its
+// x, the pointer y and the time pill under the x axis.
+type crosshair struct {
+	i        int
+	x, py    float32
+	timeText string
+	timePill ui.Rect
+}
+
+func makeCrosshair(p *ui.Painter, r ui.Rect, m rangeChartModel, hx, hy float32) *crosshair {
 	plot := chartPlot(r)
 	n := len(m.Pts)
 	px, py := r.X+hx, r.Y+hy
-	if n == 0 || px < plot.X || px > plot.X+plot.W || py < plot.Y || py > plot.Y+plot.H {
-		return
+	if n == 0 || plot.W <= 4 || plot.H <= 4 || px < plot.X || px > plot.X+plot.W || py < plot.Y || py > plot.Y+plot.H {
+		return nil
 	}
 	i := chartNearest(n, plot.W, px-plot.X)
 	x := plot.X + plot.W
 	if n > 1 {
 		x = plot.X + float32(i)*plot.W/float32(n-1)
 	}
-	line := t.Text.Alpha(0.45)
-	p.Line(x, plot.Y, x, plot.Y+plot.H, 1, line)
-	p.Line(plot.X, py, plot.X+plot.W, py, 1, line)
-	label := func(lx, ly float32, s string) {
-		w, _ := p.MeasureText(0, ui.Span{Text: s, Size: 10})
-		lx = max(r.X+1, min(lx, r.X+r.W-w-9))
-		p.Fill(ui.Rect{X: lx, Y: ly, W: w + 8, H: 15}, t.Text, 3)
-		p.Text(lx+4, ly+1, s, 10, t.Surface)
-	}
-	val := m.YMax * float64((plot.Y+plot.H-py)/plot.H)
-	label(r.X+2, py-7, fmtAxisMs(val))
+	xh := &crosshair{i: i, x: x, py: py}
 	if !m.Pts[i].At.IsZero() {
-		s := m.Pts[i].At.Local().Format(bucketTimeFmt(m.Range))
-		w, _ := p.MeasureText(0, ui.Span{Text: s, Size: 10})
-		label(x-(w+8)/2, plot.Y+plot.H+2, s)
+		xh.timeText = m.Pts[i].At.Local().Format(bucketTimeFmt(m.Range))
+		w, _ := p.MeasureText(0, ui.Span{Text: xh.timeText, Size: 10})
+		pw := w + 12
+		lx := max(r.X+2, min(x-pw/2, r.X+r.W-pw-2))
+		xh.timePill = ui.Rect{X: lx, Y: plot.Y + plot.H + 2, W: pw, H: 15}
 	}
-	lines := chartTipLines(m, i)
+	return xh
+}
+
+// dashedLine draws a 1px dashed line between two points on an axis.
+func dashedLine(p *ui.Painter, x0, y0, x1, y1 float32, c ui.Color) {
+	const dash, gap = 4, 3
+	dx, dy := x1-x0, y1-y0
+	l := float32(math.Hypot(float64(dx), float64(dy)))
+	if l <= 0 {
+		return
+	}
+	ux, uy := dx/l, dy/l
+	for s := float32(0); s < l; s += dash + gap {
+		e := min(l, s+dash)
+		p.Line(x0+ux*s, y0+uy*s, x0+ux*e, y0+uy*e, 1, c)
+	}
+}
+
+// pill draws a small rounded accent label with white text.
+func pill(p *ui.Painter, rc ui.Rect, s string, t *ui.Theme) {
+	p.Fill(rc, t.Accent, rc.H/2)
+	w, _ := p.MeasureText(0, ui.Span{Text: s, Size: 10})
+	p.Text(rc.X+(rc.W-w)/2, rc.Y+1.5, s, 10, ui.RGB(255, 255, 255))
+}
+
+// paintCrosshair draws the crosshair: dashed lines at the nearest point
+// and the pointer, accent pills on the axes, a ring on the hovered point
+// and a rounded tooltip that flips to stay inside the chart.
+func paintCrosshair(p *ui.Painter, r ui.Rect, m rangeChartModel, xh *crosshair, t *ui.Theme) {
+	plot := chartPlot(r)
+	line := t.TextMuted.Alpha(0.7)
+	dashedLine(p, xh.x, plot.Y, xh.x, plot.Y+plot.H, line)
+	dashedLine(p, plot.X, xh.py, plot.X+plot.W, xh.py, line)
+	// value pill on the y axis
+	vs := fmtAxisMs(m.YMax * float64((plot.Y+plot.H-xh.py)/plot.H))
+	vw, _ := p.MeasureText(0, ui.Span{Text: vs, Size: 10})
+	vr := ui.Rect{X: max(r.X+2, plot.X-vw-16), Y: xh.py - 7.5, W: vw + 12, H: 15}
+	pill(p, vr, vs, t)
+	if xh.timePill.W > 0 {
+		pill(p, xh.timePill, xh.timeText, t)
+	}
+	// hovered point
+	pt := m.Pts[xh.i]
+	if pt.OK && m.YMax > 0 {
+		y := plot.Y + plot.H - float32(pt.Avg/m.YMax)*plot.H
+		p.Fill(ui.Rect{X: xh.x - 5, Y: y - 5, W: 10, H: 10}, t.Surface, 5)
+		p.Stroke(ui.Rect{X: xh.x - 5, Y: y - 5, W: 10, H: 10}, t.Accent, 5, 2)
+	}
+	// tooltip
+	items := chartTipItems(m, xh.i)
+	const padX, padY, lineH, dotW = 10, 8, 16, 12
 	var tw float32
-	for _, s := range lines {
-		w, _ := p.MeasureText(0, ui.Span{Text: s, Size: 11})
+	for k, it := range items {
+		w, _ := p.MeasureText(0, tipSpan(it, k, t))
+		if k > 0 {
+			w += dotW
+		}
 		tw = max(tw, w)
 	}
-	bw, bh := tw+14, float32(len(lines))*15+8
-	bx := px + 12
-	if bx+bw > r.X+r.W-2 {
-		bx = px - 12 - bw
+	bw, bh := tw+2*padX, float32(len(items))*lineH+2*padY-2
+	bx := xh.x + 14
+	if bx+bw > r.X+r.W-4 {
+		bx = xh.x - 14 - bw
 	}
-	by := max(r.Y+2, min(py-bh/2, r.Y+r.H-bh-2))
-	p.Fill(ui.Rect{X: bx, Y: by, W: bw, H: bh}, t.Surface, 6)
-	p.Stroke(ui.Rect{X: bx, Y: by, W: bw, H: bh}, t.Border, 1, 6)
-	for k, s := range lines {
-		col := t.Text
-		if k == 0 {
-			col = t.TextMuted
+	bx = max(r.X+4, bx)
+	by := xh.py - bh - 10
+	if by < r.Y+4 {
+		by = xh.py + 10
+	}
+	by = max(r.Y+4, min(by, r.Y+r.H-bh-4))
+	box := ui.Rect{X: bx, Y: by, W: bw, H: bh}
+	shadow := ui.RGB(0, 0, 0).Alpha(0.18)
+	if t.Dark {
+		shadow = ui.RGB(0, 0, 0).Alpha(0.45)
+	}
+	p.Shadow(box, 8, 0, 3, 10, 0, shadow)
+	p.Fill(box, t.Surface.Alpha(0.94), 8)
+	p.Stroke(box, t.Border.Alpha(0.8), 8, 1)
+	for k, it := range items {
+		y := by + padY + float32(k)*lineH
+		x := bx + padX
+		if k > 0 {
+			p.Fill(ui.Rect{X: x, Y: y + 4.5, W: 7, H: 7}, tipColor(it, t), 3.5)
+			x += dotW
 		}
-		p.Text(bx+7, by+4+float32(k)*15, s, 11, col)
+		p.RichText(x, y, 0, tipSpan(it, k, t))
 	}
+}
+
+func tipColor(it chartTip, t *ui.Theme) ui.Color {
+	switch it.Kind {
+	case tipValue:
+		return t.Accent
+	case tipLoss:
+		return t.Danger
+	}
+	return t.TextMuted
+}
+
+func tipSpan(it chartTip, k int, t *ui.Theme) ui.Span {
+	if k == 0 {
+		return ui.Span{Text: it.Text, Size: 10, Color: t.TextMuted}
+	}
+	sp := ui.Span{Text: it.Text, Size: 11.5, Color: t.Text}
+	if it.Kind == tipValue || it.Kind == tipLoss {
+		sp.Weight = 600
+	}
+	return sp
 }

@@ -191,6 +191,8 @@ func (a *app) pingMenu(m *ui.Menu, display []pinger.Snapshot, keys []int, post *
 		m.Item(i18n.T("ping.ctx.none")).Disabled(true)
 		return
 	}
+	selRows := pickInOrder(display, func(s pinger.Snapshot) int { return s.ID }, ids)
+	copyColumnsMenu(m, pingColumns(), len(selRows), func(i int, id string) string { return a.pingColText(selRows[i], id) })
 	if len(ids) > 1 {
 		a.pingMultiMenu(m, ids, post)
 		return
@@ -279,6 +281,8 @@ func (a *app) traceMenu(m *ui.Menu, tab *traceTab, display []traceHopView, keys 
 	for _, h := range display {
 		byTTL[h.TTL] = h
 	}
+	selHops := pickInOrder(display, func(h traceHopView) int { return h.TTL }, ids)
+	copyColumnsMenu(m, traceColumns(), len(selHops), func(i int, id string) string { return hopColText(selHops[i], id) })
 	if len(ids) > 1 {
 		var hosts []string
 		for _, k := range ids {

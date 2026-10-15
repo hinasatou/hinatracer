@@ -104,6 +104,16 @@ type Config struct {
 	HTTPTargets   []HTTPTarget `json:"httpTargets,omitempty"`
 	AutoStartHTTP bool         `json:"autoStartHttp,omitempty"`
 
+	// Desktop alerts (all default off): system notifications on
+	// down/recovery, tray icon. (An old "showFailBadge" key is ignored.)
+	NotifyDown    bool `json:"notifyDown,omitempty"`
+	NotifyRecover bool `json:"notifyRecover,omitempty"`
+	ShowTray      bool `json:"showTray,omitempty"`
+	CloseToTray   bool `json:"closeToTray,omitempty"`
+	// DownThreshold is how many failures in a row mark a target down for
+	// the alerts (1–100; 0 = 3).
+	DownThreshold int `json:"downThreshold,omitempty"`
+
 	// Remote data source: the GUI shows a remote WebUI instead of running
 	// locally. RemoteToken is an API token (or session) obtained at
 	// sign-in; a password is never stored. RemoteGuest = guest login.
@@ -111,6 +121,9 @@ type Config struct {
 	RemoteURL   string `json:"remoteUrl,omitempty"`
 	RemoteToken string `json:"remoteToken,omitempty"`
 	RemoteGuest bool   `json:"remoteGuest,omitempty"`
+	// RemoteAutoConnect starts the app in remote mode, connecting with the
+	// stored token (default off: the app starts local).
+	RemoteAutoConnect bool `json:"remoteAutoConnect,omitempty"`
 
 	// Deprecated: migrated into IPDBPath.
 	QQWryPath string `json:"qqwryPath,omitempty"`

@@ -469,6 +469,8 @@ func (a *app) httpMenu(m *ui.Menu, display, rows []wsHTTP, keys []int, post *[]f
 		m.Item(i18n.T("ping.ctx.none")).Disabled(true)
 		return
 	}
+	selRows := pickInOrder(display, func(r wsHTTP) int { return r.ID }, ids)
+	copyColumnsMenu(m, httpColumns(), len(selRows), func(i int, id string) string { return httpColText(selRows[i], id) })
 	ro := a.readOnly()
 	if len(ids) == 1 {
 		i := indexOfID(display, ids[0])

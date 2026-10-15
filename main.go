@@ -43,6 +43,10 @@ func main() {
 	ensureConfigDir()
 	cleanupAfterUpdate()
 	a := newApp()
+	// MyGo's own strings (text field menus, dialogs) follow our language.
+	mygo.App.SetLanguages("en", "zh-Hans", "zh-Hant", "ja")
+	syncNativeLocale = func(code string) { mygo.App.SetLocale(nativeLocaleTag(code)) }
+	syncNativeLocale(a.cfg.Language)
 	updQuit = func(a *app) {
 		if a.win == nil {
 			return
@@ -82,17 +86,28 @@ func main() {
 			_ = w.SetIcon(appIconPNG)
 		}
 		a.setWindow(w)
+		w.OnClose(func(e *mygo.CloseEvent) {
+			if shouldHideOnClose(a.cfg) {
+				e.PreventDefault() // minimize to tray
+				w.Hide()
+			}
+		})
+		a.startAlerts()
 	})
 
+	quitApp := makeQuit(func() {
+		a.pingMgr.Stop()
+		if a.httpMgr != nil {
+			a.httpMgr.Stop()
+		}
+		a.hist.Close()
+		a.stopAllTraces()
+		a.flushLayouts()
+		safeGo("web.quit", a.stopWeb)
+	}, mygo.App.Quit, func() { os.Exit(0) })
+	installDesktopAlerts(a, quitApp)
 	if runtime.GOOS != "darwin" {
-		mygo.App.OnWindowAllClosed(func() {
-			a.pingMgr.Stop()
-			a.hist.Close()
-			a.stopAllTraces()
-			a.flushLayouts()
-			safeGo("web.quit", a.stopWeb)
-			mygo.App.Quit()
-		})
+		mygo.App.OnWindowAllClosed(quitApp)
 	}
 
 	if err := mygo.App.Run(); err != nil {

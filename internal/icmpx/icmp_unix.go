@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/icmp"
@@ -45,6 +46,14 @@ func ping(host string, ttl int, timeout time.Duration) (r Result) {
 }
 
 func pingNative(ip net.IP, ttl int, timeout time.Duration) (Result, bool) {
+	// Linux: prefer a raw socket (root / CAP_NET_RAW), which reads Time
+	// Exceeded from every hop; else the unprivileged ping socket, whose
+	// ICMP errors only arrive on the error queue (see errqueue.go).
+	if runtime.GOOS == "linux" && !rawAllowed(ip.To4() != nil) {
+		if res, ok := pingDgramLinux(ip, ttl, timeout); ok {
+			return res, true
+		}
+	}
 	if ip.To4() != nil {
 		return pingNative4(ip.To4(), ttl, timeout)
 	}
@@ -224,26 +233,45 @@ const (
 	ianaProtocolIPv6ICMP = 58
 )
 
+// rawAllowed caches rawICMPAllowed per family (Linux only).
+var (
+	rawOnce4, rawOnce6 sync.Once
+	raw4, raw6         bool
+)
+
+func rawAllowed(v4 bool) bool {
+	if v4 {
+		rawOnce4.Do(func() { raw4 = rawICMPAllowed(true) })
+		return raw4
+	}
+	rawOnce6.Do(func() { raw6 = rawICMPAllowed(false) })
+	return raw6
+}
+
+// listenICMP4 opens the raw socket first on Linux when permitted (the
+// datagram socket there never reads Time Exceeded); elsewhere the
+// datagram socket first, as macOS delivers ICMP errors to it.
 func listenICMP4() (*icmp.PacketConn, string, error) {
-	if c, err := icmp.ListenPacket("udp4", "0.0.0.0"); err == nil {
-		return c, "udp4", nil
-	}
-	if c, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0"); err == nil {
-		return c, "ip4:icmp", nil
-	} else {
-		return nil, "", err
-	}
+	return listenICMP(runtime.GOOS == "linux" && rawAllowed(true), "udp4", "ip4:icmp", "0.0.0.0")
 }
 
 func listenICMP6() (*icmp.PacketConn, string, error) {
-	if c, err := icmp.ListenPacket("udp6", "::"); err == nil {
-		return c, "udp6", nil
+	return listenICMP(runtime.GOOS == "linux" && rawAllowed(false), "udp6", "ip6:ipv6-icmp", "::")
+}
+
+func listenICMP(rawFirst bool, dgram, raw, addr string) (*icmp.PacketConn, string, error) {
+	order := []string{dgram, raw}
+	if rawFirst {
+		order = []string{raw, dgram}
 	}
-	if c, err := icmp.ListenPacket("ip6:ipv6-icmp", "::"); err == nil {
-		return c, "ip6:ipv6-icmp", nil
-	} else {
-		return nil, "", err
+	var err error
+	for _, nw := range order {
+		var c *icmp.PacketConn
+		if c, err = icmp.ListenPacket(nw, addr); err == nil {
+			return c, nw, nil
+		}
 	}
+	return nil, "", err
 }
 
 func writeAddr(network string, ip net.IP) net.Addr {

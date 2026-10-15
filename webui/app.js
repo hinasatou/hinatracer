@@ -116,10 +116,12 @@
   }
 
   // ---------- context menu & modal ----------
-  let menuEl = null;
+  let menuEl = null, menuPrefix = null;
   function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
   function openMenu(x, y, items) {
     closeMenu();
+    // A table puts its "Copy column" submenu in front of every row menu.
+    if (menuPrefix) { items = [...menuPrefix, ...items]; menuPrefix = null; }
     if (GUEST) {
       items = items.filter(it => it === '-' || it && !WRITE_RE.test(String(it.run)));
       items = items.filter((it, i, a) => it !== '-' || (i > 0 && i < a.length - 1 && a[i - 1] !== '-'));
@@ -129,7 +131,27 @@
     items.forEach(it => {
       if (it === '-') { m.append(H('hr')); return; }
       if (!it) return;
-      m.append(H('button', { class: it.danger ? 'danger' : '', disabled: it.disabled, onclick: () => { closeMenu(); it.run(); } }, it.label));
+      if (it.sub) {
+        const fly = H('div', { class: 'menu sub' });
+        it.sub.forEach(s => fly.append(H('button', { disabled: s.disabled, onclick: () => { closeMenu(); s.run(); } }, s.label)));
+        const b = H('button', { class: 'has-sub', disabled: it.disabled }, it.label, H('span', { class: 'sub-arrow', text: '›' }));
+        const show = () => {
+          if (b.disabled) return;
+          m.querySelectorAll('.menu.sub').forEach(x => { if (x !== fly) x.remove(); });
+          if (!fly.isConnected) m.append(fly);
+          const br = b.getBoundingClientRect(), fr = fly.getBoundingClientRect();
+          let left = br.right - 2;
+          if (left + fr.width > innerWidth - 6) left = br.left - fr.width + 2;
+          fly.style.left = left + 'px';
+          fly.style.top = Math.max(4, Math.min(br.top - 4, innerHeight - fr.height - 6)) + 'px';
+        };
+        b.onmouseenter = show; b.onclick = e => { e.stopPropagation(); show(); };
+        m.append(b);
+        return;
+      }
+      const btn = H('button', { class: it.danger ? 'danger' : '', disabled: it.disabled, onclick: () => { closeMenu(); it.run(); } }, it.label);
+      btn.onmouseenter = () => m.querySelectorAll('.menu.sub').forEach(x => x.remove());
+      m.append(btn);
     });
     document.body.append(m);
     const r = m.getBoundingClientRect();
@@ -280,11 +302,40 @@
         e.preventDefault();
         if (!sel.has(k)) { sel.clear(); sel.add(k); anchor = k; paintSel(); }
         const r = rows.find(x => o.key(x) === k);
-        if (r && o.onMenu) o.onMenu(e, r, api_selected());
+        if (r && o.onMenu) { menuPrefix = copyColsMenu(api_selected()); o.onMenu(e, r, api_selected()); menuPrefix = null; }
       };
       return tr;
     }
     function api_selected() { return display.filter(r => sel.has(o.key(r))); }
+    // colText is a cell as plain text: the string a cell shows, else the
+    // column's copy() or its sort value.
+    function colText(c, r, i) {
+      if (c.copy) return c.copy(r);
+      const v = c.cell(r, i);
+      if (!Array.isArray(v)) return v;
+      const sv = c.sort ? c.sort(r) : null;
+      return typeof sv === 'string' ? sv : String(v[0] ?? '');
+    }
+    // copyColsMenu: "Copy column" submenu for the selected rows, in the
+    // order shown; one value per line, empty values left out.
+    function copyColsMenu(selRows) {
+      if (!selRows.length) return null;
+      const sub = o.cols.filter(c => c.id !== '#').map(c => {
+        const vals = selRows.map(r => String(colText(c, r, display.indexOf(r)) ?? '').trim()).filter(v => v && v !== '—' && v !== '*' && v !== '…');
+        return { label: c.label, disabled: !vals.length, run: () => copy(vals.join('\n')) };
+      });
+      return [{ label: T('table.copy_cols', selRows.length), sub }, '-'];
+    }
+    // Ctrl/Cmd+A selects every row of the table on screen (not while typing).
+    document.addEventListener('keydown', e => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'a' || e.shiftKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (!wrap.isConnected || !wrap.offsetParent || modal || !display.length) return;
+      e.preventDefault();
+      display.forEach(r => sel.add(o.key(r)));
+      paintSel();
+    });
     function render() {
       o.cols.forEach(c => {
         c.th.classList.toggle('sorted', sort.col === c.id);
@@ -368,14 +419,15 @@
     return Math.max(0, Math.min(n - 1, Math.round(x / w * (n - 1))));
   }
   function msTxt(v) { return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + ' ms'; }
+  // tipLines: [text, kind] with kind '' (time), 'v' value, 'l' loss, 'i' info.
   function tipLines(pts, i, range) {
-    const p = pts[i], out = [p.at ? fmtRangeTime(p.at, range) : T('chart.tip.index', i + 1)];
-    if (range === 'probe') out.push(p.ok ? T('chart.tip.latency', msTxt(p.avg)) : T('chart.tip.lost'));
+    const p = pts[i], out = [[p.at ? fmtRangeTime(p.at, range) : T('chart.tip.index', i + 1), '']];
+    if (range === 'probe') out.push(p.ok ? [T('chart.tip.latency', msTxt(p.avg)), 'v'] : [T('chart.tip.lost'), 'l']);
     else {
-      if (p.ok) out.push(T('chart.tip.avg', msTxt(p.avg)), T('chart.tip.min', msTxt(p.min)), T('chart.tip.max', msTxt(p.max)));
-      out.push(T('chart.tip.loss', (p.lossPct || 0).toFixed(1) + '%'), T('chart.tip.samples', p.samples));
+      if (p.ok) out.push([T('chart.tip.avg', msTxt(p.avg)), 'v'], [T('chart.tip.min', msTxt(p.min)), 'i'], [T('chart.tip.max', msTxt(p.max)), 'i']);
+      out.push([T('chart.tip.loss', (p.lossPct || 0).toFixed(1) + '%'), 'l'], [T('chart.tip.samples', p.samples), 'i']);
     }
-    if (p.code) out.push(T('chart.tip.code', p.code));
+    if (p.code) out.push([T('chart.tip.code', p.code), 'i']);
     return out;
   }
   // rangeChart draws probes (line, lost bands) or buckets (avg line,
@@ -426,9 +478,10 @@
     // crosshair overlay
     const vx = H('div', { class: 'xh-v', hidden: true }), hy = H('div', { class: 'xh-h', hidden: true });
     const ylab = H('div', { class: 'xh-lab y', hidden: true }), xlab = H('div', { class: 'xh-lab x', hidden: true });
-    const tip = H('div', { class: 'xh-tip', hidden: true });
-    area.append(vx, hy, ylab, xlab, tip);
-    const hide = () => [vx, hy, ylab, xlab, tip].forEach(e => { e.hidden = true; });
+    const tip = H('div', { class: 'xh-tip', hidden: true }), ring = H('div', { class: 'xh-pt', hidden: true });
+    area.append(vx, hy, ring, ylab, xlab, tip);
+    const xticks = () => wrap.querySelectorAll('.chart-x span');
+    const hide = () => { [vx, hy, ring, ylab, xlab, tip].forEach(e => { e.hidden = true; }); xticks().forEach(s => { s.style.visibility = ''; }); };
     area.addEventListener('mouseleave', hide);
     area.addEventListener('mousemove', e => {
       if (!n) return;
@@ -438,12 +491,25 @@
       vx.style.left = xi + 'px'; hy.style.top = my + 'px';
       ylab.textContent = axisMs(top * (1 - my / rc.height)); ylab.style.top = (my - 8) + 'px';
       const p = pts[i];
-      xlab.hidden = !p.at; if (p.at) { xlab.textContent = fmtRangeTime(p.at, range); xlab.style.left = xi + 'px'; }
-      tip.replaceChildren(...tipLines(pts, i, range).map((t, k) => H('div', { class: k ? '' : 'muted', text: t })));
+      xlab.hidden = !p.at;
+      if (p.at) {
+        xlab.textContent = fmtRangeTime(p.at, range);
+        const lw = xlab.offsetWidth || 60;
+        xlab.style.left = Math.max(lw / 2, Math.min(rc.width - lw / 2, xi)) + 'px';
+      }
+      ring.hidden = !p.ok;
+      if (p.ok) { ring.style.left = xi + 'px'; ring.style.top = (rc.height - (p.avg / top) * rc.height) + 'px'; }
+      tip.replaceChildren(...tipLines(pts, i, range).map(([t, k]) => k ? H('div', { class: 'row k-' + k }, H('i'), H('span', { text: t })) : H('div', { class: 'time', text: t })));
       vx.hidden = hy.hidden = ylab.hidden = tip.hidden = false;
+      const xr = xlab.hidden ? null : xlab.getBoundingClientRect();
+      xticks().forEach(s => {
+        const b = s.getBoundingClientRect();
+        s.style.visibility = xr && b.right + 4 > xr.left && b.left - 4 < xr.right ? 'hidden' : '';
+      });
       const tw = tip.offsetWidth, th = tip.offsetHeight;
-      tip.style.left = (mx + 12 + tw > rc.width ? mx - 12 - tw : mx + 12) + 'px';
-      tip.style.top = Math.max(0, Math.min(rc.height - th, my - th / 2)) + 'px';
+      tip.style.left = Math.max(0, xi + 14 + tw > rc.width ? xi - 14 - tw : xi + 14) + 'px';
+      const above = my - th - 10;
+      tip.style.top = Math.max(0, Math.min(rc.height - th, above >= 0 ? above : my + 10)) + 'px';
     });
     const first = n ? (pts[0].at ? fmtRangeTime(pts[0].at, range) : T('chart.recent', n)) : '';
     const last = n ? (pts[n - 1].at ? fmtRangeTime(pts[n - 1].at, range) : T('chart.now')) : '';
@@ -760,7 +826,7 @@
         C('#', 'ping.col.n', r => String(S.http.rows.indexOf(r) + 1), null, { num: true }),
         C('alias', 'ping.col.alias', r => dash(r.alias), r => r.alias.toLowerCase()),
         C('url', 'URL', r => r.spec.url, r => r.spec.url.toLowerCase(), { mono: true }),
-        C('status', 'http.col.status', r => { const [c, l] = httpState(r); return [c + l, () => H('span', { class: 'badge ' + c, text: l })]; }, r => (r.failing ? 2 : 0) + (r.checks ? 0 : 1)),
+        C('status', 'http.col.status', r => { const [c, l] = httpState(r); return [c + l, () => H('span', { class: 'badge ' + c, text: l })]; }, r => (r.failing ? 2 : 0) + (r.checks ? 0 : 1), { copy: r => httpState(r)[1] }),
         C('code', 'http.col.code', r => (r.code ? String(r.code) : '—'), r => r.code || null, { num: true }),
         C('ip', 'ping.col.ip', r => dash(r.ip), r => ipKey(r.ip), { mono: true }),
         C('location', 'ping.col.location', r => dash(r.loc), r => (placeholder(r.loc) ? '' : r.loc)),
@@ -770,7 +836,7 @@
         C('success', 'ping.col.success', r => String(r.success), r => r.success, { num: true }),
         C('failure', 'ping.col.failure', r => String(r.failure), r => r.failure, { num: true }),
         C('success_rate', 'ping.col.rate', r => (r.checks ? pct(r.successRate) : '—'), r => r.successRate, { num: true }),
-        C('loss_rate', 'ping.col.loss', r => lossCell(r.lossRate, r.checks > 0), r => r.lossRate, { num: true }),
+        C('loss_rate', 'ping.col.loss', r => lossCell(r.lossRate, r.checks > 0), r => r.lossRate, { num: true, copy: r => (r.checks > 0 ? pct(r.lossRate) : '') }),
         C('last', 'ping.col.last', r => ms(r.last, r.checks > 0 && r.ok), r => (r.checks ? r.last : null), { num: true }),
         C('avg', 'ping.col.avg', r => ms(r.avg, has(r)), r => (has(r) ? r.avg : null), { num: true }),
         C('min', 'ping.col.min', r => ms(r.min, has(r)), r => (has(r) ? r.min : null), { num: true }),
@@ -893,7 +959,7 @@
         C('success', 'ping.col.success', r => String(r.success), r => r.success, { num: true }),
         C('failure', 'ping.col.failure', r => String(r.failure), r => r.failure, { num: true }),
         C('success_rate', 'ping.col.rate', r => (r.success + r.failure ? pct(r.successRate) : '—'), r => r.successRate, { num: true }),
-        C('loss_rate', 'ping.col.loss', r => lossCell(r.lossRate, r.success + r.failure > 0), r => r.lossRate, { num: true }),
+        C('loss_rate', 'ping.col.loss', r => lossCell(r.lossRate, r.success + r.failure > 0), r => r.lossRate, { num: true, copy: r => (r.success + r.failure > 0 ? pct(r.lossRate) : '') }),
         C('last', 'ping.col.last', r => ms(r.last, has(r)), r => (has(r) ? r.last : null), { num: true }),
         C('avg', 'ping.col.avg', r => ms(r.avg, has(r)), r => (has(r) ? r.avg : null), { num: true }),
         C('min', 'ping.col.min', r => ms(r.min, has(r)), r => (has(r) ? r.min : null), { num: true }),
@@ -1052,7 +1118,7 @@
         C('ip', 'trace.col.ip', r => r.addr, r => ipKey(r.addr), { mono: true }),
         C('rdns', 'trace.col.rdns', r => dash(r.rdns), r => (placeholder(r.rdns) ? '' : r.rdns)),
         C('rtt', 'trace.col.rtt', r => r.rtt, r => (has(r) ? r.last : null), { num: true }),
-        C('loss', 'ping.col.loss', r => lossCell(r.lossRate, r.success + r.failure > 0), r => r.lossRate, { num: true }),
+        C('loss', 'ping.col.loss', r => lossCell(r.lossRate, r.success + r.failure > 0), r => r.lossRate, { num: true, copy: r => (r.success + r.failure > 0 ? pct(r.lossRate) : '') }),
         C('avg', 'ping.col.avg', r => ms(r.avg, has(r)), r => (has(r) ? r.avg : null), { num: true }),
         C('min', 'ping.col.min', r => ms(r.min, has(r)), r => (has(r) ? r.min : null), { num: true }),
         C('max', 'ping.col.max', r => ms(r.max, has(r)), r => (has(r) ? r.max : null), { num: true }),

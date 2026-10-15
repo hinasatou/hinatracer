@@ -371,17 +371,7 @@ func (a *app) viewIPLookup(c *ui.Context) {
 		card(c, func() {
 			ui.Text(c, i18n.T("lookup.results")).FontSize(14).Bold()
 			display := rows
-			cols := []ui.TableColumn{
-				{Title: i18n.T("lookup.col.query"), ID: "query", Width: 140, Sortable: true},
-				{Title: i18n.T("lookup.col.ip"), ID: "ip", Width: 140, Sortable: true},
-				{Title: i18n.T("lookup.col.ping"), ID: "ping", Width: 110, Align: ui.End, Sortable: true},
-				{Title: i18n.T("lookup.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
-				{Title: i18n.T("lookup.col.location"), ID: "location", Width: 130, Sortable: true},
-				{Title: i18n.T("lookup.col.region"), ID: "region", Width: 130, Sortable: true},
-				{Title: i18n.T("lookup.col.asn"), ID: "asn", Width: 180, Sortable: true},
-				{Title: i18n.T("lookup.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
-				{Title: i18n.T("lookup.col.error"), ID: "error", Width: 160, Sortable: true},
-			}
+			cols := lookupColumns()
 			n := len(display)
 			if n == 0 {
 				ui.Text(c, i18n.T("lookup.empty")).FontSize(12).TextColor(t.TextMuted)
@@ -503,6 +493,8 @@ func (a *app) lookupMenu(m *ui.Menu, display []lookupRow, keys []int, post *[]fu
 		}
 	}
 	ipTargets, domTargets, traceHosts := lookupAddTargets(sel)
+	ordered := pickInOrder(display, func(r lookupRow) int { return r.ID }, ids)
+	copyColumnsMenu(m, lookupColumns(), len(ordered), func(i int, id string) string { return a.lookupColText(ordered[i], id) })
 	if len(sel) == 1 {
 		r := sel[0]
 		meta := a.hostMetaOf(r.IP)
@@ -583,4 +575,19 @@ func lookupAddTargets(rows []lookupRow) (ips, domains, trace []string) {
 		add(&trace, "tr", r.IP)
 	}
 	return ips, domains, trace
+}
+
+// lookupColumns are the table columns (also listed by the copy-column menu).
+func lookupColumns() []ui.TableColumn {
+	return []ui.TableColumn{
+		{Title: i18n.T("lookup.col.query"), ID: "query", Width: 140, Sortable: true},
+		{Title: i18n.T("lookup.col.ip"), ID: "ip", Width: 140, Sortable: true},
+		{Title: i18n.T("lookup.col.ping"), ID: "ping", Width: 110, Align: ui.End, Sortable: true},
+		{Title: i18n.T("lookup.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
+		{Title: i18n.T("lookup.col.location"), ID: "location", Width: 130, Sortable: true},
+		{Title: i18n.T("lookup.col.region"), ID: "region", Width: 130, Sortable: true},
+		{Title: i18n.T("lookup.col.asn"), ID: "asn", Width: 180, Sortable: true},
+		{Title: i18n.T("lookup.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
+		{Title: i18n.T("lookup.col.error"), ID: "error", Width: 160, Sortable: true},
+	}
 }

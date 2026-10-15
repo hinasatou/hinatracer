@@ -391,7 +391,7 @@ func (a *app) viewSettingsUpdate(c *ui.Context) {
 		a.upd.chanName = pre
 	}
 	card(c, func() {
-		ui.Text(c, i18n.T("update.settings.title")).FontSize(14).Bold()
+		cardTitle(c, i18n.T("update.settings.title"))
 		ui.Text(c, i18n.T("update.settings.desc")).FontSize(12).TextColor(t.TextMuted)
 		if ui.Checkbox(c, &a.upd.checkOnRun, i18n.T("update.settings.on_start")).Changed() {
 			v := a.upd.checkOnRun

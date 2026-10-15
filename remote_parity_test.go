@@ -319,7 +319,43 @@ func TestRemoteGUILookupAndSettingsAdmin(t *testing.T) {
 	if tt.HasText(i18n.T("settings.save_startup")) {
 		t.Fatal("local startup card shown in remote mode")
 	}
+	for _, k := range []string{"settings.scope.intro", "settings.scope.local_group", "settings.scope.inactive_group", "settings.scope.badge_local", "settings.scope.badge_remote"} {
+		if !tt.HasText(i18n.T(k)) {
+			t.Fatalf("settings misses %s", k)
+		}
+	}
+	if !tt.HasText(i18n.Tf("settings.scope.remote_group", b.remoteHost())) {
+		t.Fatal("no remote group header")
+	}
+	for _, s := range tt.Texts() {
+		if strings.Contains(s, "1970") {
+			t.Fatalf("token time in wrong unit: %q", s)
+		}
+	}
 	savePNG(t, "shot_remote_settings.png", tt.Image())
+	on(b, func() { b.settingsInactiveOpen = true })
+	tt.Frame()
+	tt.Frame()
+	if !tt.HasText(i18n.T("settings.save_startup")) || !tt.HasText(i18n.T("settings.local_webui.title")) {
+		t.Fatal("expanded local group misses local cards")
+	}
+	if os.Getenv("HT_SHOT_DIR") != "" {
+		prev := i18n.Language()
+		i18n.SetLanguage("zh-CN")
+		on(b, func() { b.settingsInactiveOpen = false })
+		for _, dark := range []bool{false, true} {
+			zt := ui.NewTester(locked(b, b.viewSettings), 1100, 2200)
+			zt.SetDark(dark)
+			zt.Frame()
+			zt.Frame()
+			name := "shot_settings_scope.png"
+			if dark {
+				name = "shot_settings_scope_dark.png"
+			}
+			savePNG(t, name, zt.Image())
+		}
+		i18n.SetLanguage(prev)
+	}
 }
 
 func TestRemoteGUIGuestReadOnly(t *testing.T) {
@@ -590,5 +626,15 @@ func TestResetConfirmMCPAndCLI(t *testing.T) {
 	}
 	if code, out := run("http", "reset", "--yes"); code != 0 {
 		t.Fatalf("cli --yes: %d %s", code, out)
+	}
+}
+
+func TestTokenCreatedSeconds(t *testing.T) {
+	sec := time.Date(2026, 10, 15, 20, 1, 10, 0, time.Local).Unix()
+	if got := fmtTokenCreated(sec); got != "2026/10/15 20:01:10" {
+		t.Fatalf("got %q", got)
+	}
+	if fmtTokenCreated(0) != "—" {
+		t.Fatal("zero")
 	}
 }

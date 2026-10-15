@@ -232,7 +232,7 @@ func (a *app) viewSettingsHistory(c *ui.Context) {
 		a.histUI = histUI{inited: true, save: a.cfg.PingHistorySave, days: strconv.Itoa(a.historyDays())}
 	}
 	card(c, func() {
-		ui.Text(c, i18n.T("settings.history.title")).FontSize(14).Bold()
+		cardTitle(c, i18n.T("settings.history.title"))
 		ui.Text(c, i18n.Tf("settings.history.desc", a.historyDBPath())).FontSize(12).TextColor(t.TextMuted).Selectable()
 		apply := false
 		if ui.Checkbox(c, &a.histUI.save, i18n.T("settings.history.save")).Changed() {

@@ -122,7 +122,7 @@ func TestTraceMultiSelectMenu(t *testing.T) {
 	tt.RightClick("192.0.2.3")
 	menu := tt.Menu()
 	item := i18n.Tf("trace.ctx.multi.add_ping", 2)
-	if len(menu) != 1 || menu[0] != item {
+	if len(menu) != 3 || menu[0] != i18n.Tf("table.copy_cols", 3) || menu[2] != item {
 		t.Fatalf("menu %q", menu)
 	}
 	if err := tt.ChooseMenuItem(item); err != nil {
@@ -148,7 +148,7 @@ func TestLookupMultiSelectMenu(t *testing.T) {
 	tt.Frame()
 	tt.RightClick("192.0.2.11")
 	menu := tt.Menu()
-	if len(menu) != 3 {
+	if len(menu) != 5 || menu[0] != i18n.Tf("table.copy_cols", 2) {
 		t.Fatalf("menu %q", menu)
 	}
 	if err := tt.ChooseMenuItem(i18n.Tf("lookup.ctx.multi.add_ping_ip", 2)); err != nil {

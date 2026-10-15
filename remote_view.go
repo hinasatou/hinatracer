@@ -6,6 +6,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"hinatracer/i18n"
+	"hinatracer/internal/config"
 )
 
 // remoteSettingsUI is the 「数据源」 settings draft and the remote pages'
@@ -23,7 +24,7 @@ type remoteSettingsUI struct {
 
 // startRemoteFromConfig enters remote mode at startup (UI thread).
 func (a *app) startRemoteFromConfig() bool {
-	if !a.cfg.RemoteMode || a.cfg.RemoteURL == "" {
+	if !a.cfg.RemoteMode || !a.cfg.RemoteAutoConnect || a.cfg.RemoteURL == "" {
 		return false
 	}
 	base, err := normalizeRemoteURL(a.cfg.RemoteURL)
@@ -120,6 +121,13 @@ func (a *app) remoteStatusLine(c *ui.Context) {
 		if e != "" && st != "connected" {
 			ui.Text(c, e).FontSize(11).TextColor(t.Danger).SingleLine().MinWidth(0)
 		}
+		if st == "error" || st == "reconnecting" {
+			// the client keeps retrying; offer a way back to local
+			if ui.Button(c, i18n.T("remote.use_local")).Clicked() {
+				a.leaveRemote()
+				a.rset.mode, a.rset.msg = 0, ""
+			}
+		}
 	})
 }
 
@@ -130,7 +138,7 @@ func (a *app) viewDataSource(c *ui.Context) {
 	if !s.inited {
 		s.inited = true
 		s.url = a.cfg.RemoteURL
-		if a.cfg.RemoteMode {
+		if a.remote != nil || a.cfg.RemoteMode {
 			s.mode = 1
 		}
 		switch {
@@ -141,7 +149,7 @@ func (a *app) viewDataSource(c *ui.Context) {
 		}
 	}
 	card(c, func() {
-		ui.Text(c, i18n.T("remote.title")).FontSize(14).Bold()
+		cardTitle(c, i18n.T("remote.title"))
 		ui.Text(c, i18n.T("remote.desc")).FontSize(12).TextColor(t.TextMuted)
 		ui.Segmented(c, &s.mode, i18n.T("remote.mode.local"), i18n.T("remote.mode.remote"))
 		if s.mode == 0 {
@@ -152,6 +160,13 @@ func (a *app) viewDataSource(c *ui.Context) {
 			return
 		}
 		a.remoteStatusLine(c)
+		if a.remote != nil {
+			if ui.Checkbox(c, &a.cfg.RemoteAutoConnect, i18n.T("remote.autoconnect")).Changed() {
+				v := a.cfg.RemoteAutoConnect
+				_ = a.store.Update(func(cf *config.Config) { cf.RemoteAutoConnect = v })
+			}
+			ui.Text(c, i18n.T("remote.autoconnect_desc")).FontSize(11).TextColor(t.TextMuted)
+		}
 		ui.TextInput(c, &s.url).Placeholder(i18n.T("ph.remote.url")).Label(i18n.T("remote.url")).MinWidth(320)
 		ui.Segmented(c, &s.auth, i18n.T("remote.auth.password"), i18n.T("remote.auth.token"), i18n.T("remote.auth.guest"))
 		switch s.auth {

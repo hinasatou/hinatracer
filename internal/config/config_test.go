@@ -82,3 +82,34 @@ func TestTraceTabsRoundTrip(t *testing.T) {
 		t.Fatal(got.TraceTabs[0].Interval)
 	}
 }
+
+func TestOldBadgeKeyIgnored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"showFailBadge":true,"notifyDown":true,"showTray":true,"downThreshold":5}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore(path)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	c := s.Get()
+	if !c.NotifyDown || !c.ShowTray || c.DownThreshold != 5 {
+		t.Fatalf("got %+v", c)
+	}
+	if err := s.Set(c); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if json.Valid(b) && contains(string(b), "showFailBadge") {
+		t.Fatal("old key written back")
+	}
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
