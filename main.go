@@ -39,10 +39,23 @@ func main() {
 	}
 	mygo.App.SetName("HinaTracer")
 	mygo.App.SetVersion(appVersion)
+	// Desktop app only (CLI, --web and --version returned above): one
+	// instance per user. A second launch brings the running window to the
+	// front (also from the tray) and exits.
+	if !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
+	var activate func()
+	mygo.App.OnSecondInstance(func([]string, string) {
+		if activate != nil {
+			activate()
+		}
+	})
 
 	ensureConfigDir()
 	cleanupAfterUpdate()
 	a := newApp()
+	activate = a.showMainWindow
 	// MyGo's own strings (text field menus, dialogs) follow our language.
 	mygo.App.SetLanguages("en", "zh-Hans", "zh-Hant", "ja")
 	syncNativeLocale = func(code string) { mygo.App.SetLocale(nativeLocaleTag(code)) }
@@ -96,14 +109,7 @@ func main() {
 	})
 
 	quitApp := makeQuit(func() {
-		a.pingMgr.Stop()
-		if a.httpMgr != nil {
-			a.httpMgr.Stop()
-		}
-		a.hist.Close()
-		a.stopAllTraces()
-		a.flushLayouts()
-		safeGo("web.quit", a.stopWeb)
+		a.quitCleanup()
 	}, mygo.App.Quit, func() { os.Exit(0) })
 	installDesktopAlerts(a, quitApp)
 	if runtime.GOOS != "darwin" {

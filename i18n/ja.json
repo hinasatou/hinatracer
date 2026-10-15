@@ -166,8 +166,11 @@
         "settings.appearance": "外観",
         "settings.language": "言語",
         "settings.language_desc": "内蔵およびカスタム言語パック。切り替えは即時反映されます。",
-        "settings.language_browser": "このブラウザの表示言語（この端末のみ。サーバー設定は変更しません）。",
-        "settings.language_browser_only": "このブラウザのみ（設定ファイルには書き込まない）",
+        "settings.language_browser": "このブラウザにのみ保存され、ゲストも設定できます。「既定に従う」を選ぶと既定の言語を使います。",
+        "settings.language_mine": "自分の言語",
+        "settings.language_follow": "既定に従う（{0}）",
+        "settings.language_default": "既定の言語",
+        "settings.language_default_desc": "設定ファイルに保存され、個別に言語を設定していないブラウザとデスクトップアプリで使われます。",
         "settings.theme": "テーマ",
         "settings.theme_desc": "ライト、ダーク、またはシステムに従う。即時反映されます。",
         "settings.theme.light": "ライト",
@@ -602,6 +605,8 @@
         "web.mcp.url": "MCP アドレス：",
         "web.mcp.stopped": "WebUI を起動すると使えます",
         "web.cli.client": "コマンドラインクライアント（実行中の HinaTracer を操作）：",
-        "web.listen.next_start": "保存しました。次に WebUI を起動したときに反映されます"
+        "web.listen.next_start": "保存しました。次に WebUI を起動したときに反映されます",
+        "web.listen.active_differs": "現在 {0} で待ち受けています（保存済みの設定 {1} とは異なります。起動オプションなどで指定）",
+        "web.listen.saved_differs": "保存済みの設定：{0}（次回の起動時に使用）"
     }
 }

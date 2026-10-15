@@ -109,7 +109,12 @@ func remoteFixture(t *testing.T, guest bool) (*accessFixture, *app) {
 		}
 	}
 	b.enterRemote(rc)
-	t.Cleanup(func() { b.remote.Stop() })
+	t.Cleanup(func() {
+		if b.remote != nil {
+			b.remote.Stop()
+		}
+	})
+	t.Cleanup(rc.Stop)
 	waitFor(t, "connected", 5*time.Second, func() bool {
 		st, ok := rc.State()
 		return ok && len(st.Ping.Rows) == 1

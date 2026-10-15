@@ -391,3 +391,22 @@ func TestRestoredTabsStartStopped(t *testing.T) {
 		t.Fatalf("%q", a.traceTabs[0].Host)
 	}
 }
+
+// The single-instance lock is taken only on the desktop path: after the
+// CLI, --web and --version dispatch and before any window exists.
+func TestSingleInstanceDesktopOnly(t *testing.T) {
+	src := readAll(t, "main.go")
+	lock := strings.Index(src, "mygo.App.RequestSingleInstanceLock()")
+	cli := strings.Index(src, "os.Exit(runCLI(opt))")
+	ctl := strings.Index(src, "runCtl(os.Args[1:]")
+	win := strings.Index(src, "mygo.NewWindow(")
+	if lock < 0 || cli < 0 || ctl < 0 || win < 0 || lock < cli || lock < ctl || lock > win {
+		t.Fatalf("lock at %d, cli %d, ctl %d, window %d", lock, cli, ctl, win)
+	}
+	if !strings.Contains(src, "mygo.App.OnSecondInstance(") || !strings.Contains(src, "activate = a.showMainWindow") {
+		t.Fatal("second launch does not show the running window")
+	}
+	if !strings.Contains(readAll(t, "alerts_desktop.go"), "a.win.Restore()") {
+		t.Fatal("minimized window not restored")
+	}
+}

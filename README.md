@@ -4,117 +4,178 @@ English | [中文(简体)](README.zh-CN.md) | [中文(繁體)](README.zh-HK.md) 
 
 <img src="resources/icon.png" width="96" height="96" alt="HinaTracer icon" />
 
-A native desktop network toolkit for Windows, macOS and Linux: continuous ping (ICMP and TCP), traceroute / MTR and IP lookup, with location, region and ASN details for every address.
+A network toolkit for Windows, macOS and Linux: Ping and HTTP monitoring, traceroute / MTR and IP lookup, with location, region and ASN details for every address. Use it as a desktop app, in a browser (WebUI), from the command line or from AI assistants (MCP).
+
+## Contents
+
+- [Features](#features)
+- [Download and install](#download-and-install)
+- [Quick start](#quick-start)
+- [WebUI](#webui)
+- [Remote data source](#remote-data-source)
+- [Command line](#command-line)
+- [AI clients (MCP)](#ai-clients-mcp)
+- [Data files](#data-files)
+- [Settings, files and languages](#settings-files-and-languages)
+- [FAQ](#faq)
+- [License](#license)
 
 ## Features
 
-- **Ping monitoring**: watch many targets at once with live success rate, packet loss, and last / average / min / max / median latency. Each target can be enabled or disabled, renamed with an alias and opened in a details window. Targets can be added one at a time or imported in bulk.
-- **TCP ping**: give a target a port (`example.com:443`) and HinaTracer measures the TCP connection time instead of sending ICMP echoes.
-- **Traceroute / MTR**: each trace runs in its own tab. MTR mode keeps probing every hop, and you can start or stop all tabs at once. A hop can be sent to Ping monitoring with one click.
-- **IP lookup**: look up IPs or domains (one per line). Domains resolve to all of their IPv4 and IPv6 addresses, and each address gets a quick latency check.
-- **Region and ASN info**: every address shows its location, region with flag, ASN / network name and the ASN's registered region. IPv4 and IPv6 are both supported.
-- **Convenient tables**: sort by any column, resize and reorder columns (remembered between launches), select several rows and right-click for quick actions.
-- **Update checker**: optionally checks GitHub Releases at startup (stable releases only, or including pre-releases) and can download, verify and install the new version for you.
-- **WebUI**: use every feature from a browser, from the desktop app or with no window at all (`--web`), with an optional access password.
-- **Languages and themes**: 中文(简体), 中文(繁體), 日本語 and English, plus your own language packs; light, dark or follow-system theme.
+### Ping and HTTP monitoring
+- Watch many targets at once: success and failure counts and rates, last / average / min / max / median latency, IP, location, region and ASN.
+- ICMP ping (`example.com`, `1.1.1.1`, `2606:4700:4700::1111`) or TCP ping with a port (`example.com:443`, `[2606:4700:4700::1111]:443`).
+- HTTP monitoring of websites and APIs: method (GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS or custom), request body and Content-Type, interval, timeout, expected status codes (e.g. `200-299,301` or `2xx`; empty means 200–399), text or regular-expression match (can be inverted), custom headers, follow redirects, ignore TLS errors. The detail window shows DNS / connect / TLS / first-byte timing and certificate days left.
+- Enable / disable, alias, reorder by dragging, batch import, auto-start at launch (off by default).
 
-## Download
+### Traceroute / MTR
+- Each trace runs in its own tab; MTR mode keeps probing every hop. Start or stop all tabs at once.
+- Trace any Ping target or IP lookup result from the right-click menu; send a hop to Ping monitoring with one click.
+
+### IP lookup
+- Look up IPs or domains, one per line. Domains resolve to all their IPv4 and IPv6 addresses, each with a quick latency check.
+
+### History and charts
+- Double-click a row (or press Enter) to open its detail window with a latency chart: per probe, per minute, hour, day, week or month (average line, min–max band, loss bars, crosshair).
+- Optionally save Ping and HTTP history and table statistics to disk (SQLite, kept 90 days by default), so the totals continue after a restart.
+- Export CSV: `time,target,alias,ip,samples,avg,min,max,loss%`.
+
+### Tables
+- Sort by any column, resize and reorder columns (remembered), multi-select with Ctrl/⌘ or Shift (Ctrl+A / ⌘+A selects all) and act on all selected rows from the right-click menu.
+- **Copy column**: copy one column of all selected rows, one value per line.
+
+### Desktop alerts
+All off by default, under **Settings → Desktop alerts** (desktop app only):
+- System notification when a target goes down (a set number of failures in a row, default 3, adjustable 1–100) and optionally when it recovers. Covers running Ping and HTTP monitoring; bursts are combined into one notification.
+- Tray icon (show window, start/stop all Ping or HTTP monitoring, quit) and optional minimize to tray when closing the window.
+
+### WebUI, remote data source, CLI and MCP
+- **WebUI**: every feature in a browser, from the desktop app or with no window (`--web`), with password, guest mode and API tokens.
+- **Remote data source**: the desktop app can show and control another HinaTracer, for example a Linux server.
+- **Command line** and **MCP** for scripts and AI assistants.
+
+### Other
+- Update checker (stable or pre-release channel) that downloads, verifies and installs new versions.
+- 中文(简体), 中文(繁體), 日本語 and English, plus your own language packs; light, dark or system theme.
+- Only one desktop window runs at a time: opening HinaTracer again brings the running window to the front.
+
+## Download and install
 
 Get the latest version from **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)**.
 
 | Platform | File | Notes |
 |----------|------|-------|
-| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64-setup.exe` | Installer (recommended); installs for the current user, no admin rights needed |
-| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64.zip` | Portable; unzip and run `HinaTracer.exe` |
-| macOS (Apple silicon) | `HinaTracer-vX.Y.Z-macos-arm64.zip` | Contains `HinaTracer.app` |
-| macOS (Intel) | `HinaTracer-vX.Y.Z-macos-amd64.zip` | Contains `HinaTracer.app` |
-| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.deb` | For Debian / Ubuntu and derivatives |
-| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | Portable binary with desktop entry and icon |
-| All | `SHA256SUMS.txt` | Checksums to verify your download |
+| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64-setup.exe` | Installer (recommended), per user, no admin rights needed |
+| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64.zip` | Portable: unzip and run `HinaTracer.exe` |
+| macOS (Apple silicon / Intel) | `HinaTracer-vX.Y.Z-macos-arm64.dmg` / `-macos-amd64.dmg` | Installer disk image (recommended) |
+| macOS (Apple silicon / Intel) | `HinaTracer-vX.Y.Z-macos-arm64.zip` / `-macos-amd64.zip` | Contains `HinaTracer.app` |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.deb` | Desktop app for Debian / Ubuntu |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | Portable desktop app with icon |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64` | Single binary (desktop, `--web` or command line) |
+| Linux server | `HinaTracer-vX.Y.Z-linux-amd64-server.deb` | WebUI only, as a systemd service |
+| All | `SHA256SUMS.txt` | Checksums |
 
-## Platform notes
+**macOS install.** Open the `.dmg` and drag **HinaTracer** onto **Applications**.
 
-**Linux: ping permissions.** If pings fail with a permission error, allow unprivileged ICMP or give the binary the raw-socket capability:
+**macOS first launch.** The app is not signed by Apple, so macOS may say it cannot be verified or offer to move it to the Trash. Right-click `HinaTracer.app` → **Open** (or **System Settings → Privacy & Security → Open Anyway**), or run once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/HinaTracer.app
+```
+
+**Linux ping permission.** If pings fail with a permission error, allow unprivileged ICMP, or give the binary the raw-socket capability:
 
 ```bash
 sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"   # until reboot
 sudo setcap cap_net_raw+ep /path/to/hinatracer              # or this, once
 ```
 
-Either way traceroute / MTR shows every hop: with the capability (or as root, or the server package's service) HinaTracer uses a raw ICMP socket; without it, it uses the unprivileged ICMP socket and reads the routers' replies from the socket's error queue.
+Traceroute / MTR shows every hop either way, also as a normal user.
 
-**macOS: first launch.** The app is not signed by Apple, so Gatekeeper may block it. Right-click `HinaTracer.app` and choose **Open**, or run:
+**Linux server package (Debian / Ubuntu).** Runs only the WebUI, under systemd:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/HinaTracer.app
+sudo apt install ./HinaTracer-vX.Y.Z-linux-amd64-server.deb
+sudo -u hinatracer hinatracer web passwd --config /etc/hinatracer/config.json
+sudo systemctl restart hinatracer
 ```
 
-## Data files
+It installs `/usr/bin/hinatracer`, the service `hinatracer.service` (user `hinatracer`, with `CAP_NET_RAW`), the config `/etc/hinatracer/config.json` and data in `/var/lib/hinatracer`, and listens on `http://127.0.0.1:8790/` by default. A password is required before listening on another address. Upgrade with the package manager (the built-in updater only reports new versions here).
 
-Location, region and ASN details come from three free data files. Open **Settings** and click **Download / update all** to fetch all three in one go (you can also point to files you already have). Without them the app still works, but those columns show “—”.
+## Quick start
 
-| File | Used for | Source |
-|------|----------|--------|
-| `qqwry.ipdb` | Location | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) |
-| `Country.mmdb` | Region and flag | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
-| `ip2asn-combined.tsv.gz` | ASN, network name and ASN region | [iptoasn.com](https://iptoasn.com/) |
+1. Start HinaTracer and open **Settings → Download / update all** to fetch the [data files](#data-files) (optional, for location, region and ASN).
+2. **Ping Monitor**: enter a host (`1.1.1.1`, `example.com:443`) and click **Add**, or use **Batch Import** with one `host` or `host,alias` per line (`#` starts a comment). Click **Start Monitor**.
+3. **HTTP Monitor**: add a URL, or **Batch add** with one `URL alias` per line. Right-click → **Edit** for method, status codes, match and headers.
+4. **Traceroute**: enter a host in a tab and click **Start Trace**; tick MTR mode to keep probing.
+5. **IP Lookup**: paste IPs or domains, one per line.
+6. Double-click any row for its details and chart.
 
-These files are provided by their respective projects and are subject to their own licenses.
+## WebUI
 
-## Usage tips
-
-- **Target formats**: `example.com`, `1.1.1.1` and `2606:4700:4700::1111` use ICMP. `example.com:443`, `1.1.1.1:443` and `[2606:4700:4700::1111]:443` use TCP ping. IPv6 addresses with a port must be in brackets.
-- **Batch import** (Ping Monitor → **Batch Import**): one target per line, optionally followed by an alias: `host,alias` or `host:port,alias`. Lines starting with `#` are ignored.
-- **Multi-select**: Ctrl+click (⌘+click on macOS) adds or removes a row, Shift+click selects a range, and Ctrl+A / ⌘+A selects all. With several rows selected, the right-click menu shows only the actions that make sense for all of them, such as enable / disable / delete or add to Ping.
-- **Details**: double-click a row or press Enter to open its details window.
-- **Traceroute from anywhere**: right-click a Ping target or IP lookup result to trace it. TCP targets are traced to the host.
-
-## WebUI (use HinaTracer in a browser)
-
-Everything in the desktop app (Ping monitoring, traceroute / MTR, IP lookup, data file downloads and settings) is also available as a web page. The web page and the desktop window share the same settings and the same running tasks, so a target you add in one appears in the other at once.
-
-**From the desktop app**: open the **WebUI** page, choose the bind IP and port, and click **Start**. The address to open is shown there; you can copy it or open it in your browser. Tick *Start the web server when HinaTracer opens* to have it running every time.
-
-**Without a window** (for a server or an always-on PC):
+**Start it** on the **WebUI** page of the desktop app (choose bind IP and port, click **Start**; tick *Start the web server when HinaTracer opens* to run it every time), or without a window:
 
 ```
-hinatracer --web                                # uses the saved address, default 127.0.0.1:8790
+hinatracer --web                                # saved address, default 127.0.0.1:8790
 hinatracer --web --listen 0.0.0.0:8790          # reachable from other devices (password required)
 hinatracer --web --web-host 127.0.0.1 --web-port 9000
-hinatracer --help
 ```
 
-The address is printed in the terminal and written to `web.log` next to `config.json`. Press Ctrl+C to stop.
+The browser and the desktop window share the same settings and running tasks. In no-window mode the address is printed and written to `web.log` next to `config.json`; Ctrl+C stops it. The WebUI page always shows the address the server is actually listening on.
 
-**Access protection**
+**Password.** `127.0.0.1` is reachable only from this computer. Any other address needs an access password, set on the WebUI page or with:
 
-- The default address `127.0.0.1` can only be opened on this computer.
-- To let other devices connect (for example `0.0.0.0`), set an **access password** on the WebUI page first; HinaTracer will not listen on such an address without one. In no-window mode you can instead set the `HINATRACER_WEB_PASSWORD` environment variable.
-- With a password set, the page asks you to sign in. Changing the password signs out every browser.
-- The page uses plain HTTP. On networks you don't trust, keep it on `127.0.0.1` or put it behind an HTTPS reverse proxy.
+```
+hinatracer web passwd                       # asks for the password
+hinatracer web passwd --config FILE         # for another config file
+hinatracer web passwd --clear               # remove it
+```
 
-## Guest mode
+or the `HINATRACER_WEB_PASSWORD` environment variable. The password is stored only as a salted hash and is never shown. Changing it signs out every browser. The WebUI uses plain HTTP: on untrusted networks keep it on `127.0.0.1` or put it behind an HTTPS reverse proxy.
 
-On the **WebUI** page, after setting an access password, tick **Allow guest mode**. The sign-in page then also shows **Sign in as guest**: guests need no password and can look at everything, but cannot change anything (no adding or deleting targets, no starting or stopping, no settings, downloads or updates), and they do not see file paths or access settings. A **Guest** badge is shown at the top. Turning guest mode off signs guests out.
+**Guest mode.** With a password set, tick **Allow guest mode**. Guests sign in without a password and can view everything but change nothing; they don't see file paths, access settings or HTTP header values.
 
-## API tokens
+**API tokens.** Create tokens on the WebUI page with role **Admin** (full access) or **Guest** (read only). A token is shown only once; lost tokens can only be revoked and replaced.
 
-Create tokens on the **WebUI** page (in the desktop app or under Settings in the browser): give it a name and pick a role:
+**Language.** **Settings → Appearance → My language** applies to this browser only (anyone, including guests; **Follow default** clears it). Admins also set **Default language**, which is saved in the config.
 
-- **Admin**: can view and change everything.
-- **Guest**: view only.
+## Remote data source
 
-The token is shown **only once**; copy it right away. Only a fingerprint of it is stored, so a lost token cannot be recovered: revoke it and create a new one.
+**Settings → Data source → Remote WebUI** makes the desktop window show and control another HinaTracer instead of this computer.
+
+- Enter the WebUI address and sign in with the admin password, an API token, or as a guest (read only). The password is used once to create a token and is not saved.
+- Every page works as locally. Settings shows **Local** settings (this computer) and **Remote** server settings separately.
+- Quitting the app or switching back to local never stops anything on the server.
+- **Connect to the remote WebUI automatically at startup** (shown after connecting, off by default). Switch back with **Switch back to local**.
+
+## Command line
+
+With the desktop app's WebUI or `hinatracer --web` running, control it from a terminal. Run `hinatracer help` for every option.
+
+| Command | Purpose |
+|---------|---------|
+| `ping list` / `ping add <host> [--alias A]` / `ping import <file>` | Ping targets |
+| `ping enable` / `disable` / `delete` / `alias` / `move` `<id\|host>` | Edit targets |
+| `ping start` / `ping stop` / `ping reset [--yes]` / `ping interval <s>` | Run and reset |
+| `ping history <id\|host> [--range R] [--csv]` | History (R: probe, minute, hour, day, week, month) |
+| `http list` / `http add <url> [options]` / `http edit` / `http import` | HTTP targets |
+| `http start` / `http stop` / `http reset [--yes]` / `http history` | Run, reset, history |
+| `trace list` / `trace new [host] [--mtr true] [--start]` / `trace show <tab>` | Traceroute tabs |
+| `trace start\|stop\|close <tab>` / `trace startall` / `trace stopall` | Control tabs |
+| `lookup <ip\|domain>...` | IP lookup |
+| `settings get` / `settings set key=value...` | Settings |
+| `data download` / `update check` | Data files and updates |
+| `web status` / `web listen` / `web guest on\|off` / `web passwd` | WebUI access |
+| `token list` / `token create <name> [--role admin\|guest]` / `token revoke <id>` | API tokens |
+| `info` / `mcp tools` / `api <METHOD> <PATH> [JSON]` | Other |
+
+Common options: `--server URL` (or `HINATRACER_SERVER`; default is the saved WebUI address), `--token TOKEN` (or `HINATRACER_TOKEN`; not needed on this computer without a password) and `--json`.
+
+Program options: `--web`, `--listen ADDR`, `--web-host`, `--web-port`, `--config FILE` (or `HINATRACER_CONFIG`), `--server-mode`, `--version`, `--help`.
 
 ## AI clients (MCP)
 
-While the WebUI is running, HinaTracer is also an MCP server, so AI assistants that support MCP can read your monitoring results and, with an admin token, manage targets and traceroutes for you. The address is shown on the WebUI page:
-
-```
-http://127.0.0.1:8790/mcp
-```
-
-Add it to your AI client as a remote (HTTP) MCP server with an API token in the `Authorization` header, for example:
+While the WebUI runs, HinaTracer is an MCP server (Streamable HTTP) at `http://HOST:PORT/mcp`. Add it to your AI client with an API token:
 
 ```json
 {
@@ -128,119 +189,52 @@ Add it to your AI client as a remote (HTTP) MCP server with an API token in the 
 }
 ```
 
-With a guest token the assistant can only read. When no access password is set, clients on this computer can connect without a token.
+A guest token can only read; an admin token can also manage targets, traceroutes and settings. Without an access password, clients on this computer need no token. `hinatracer mcp tools` lists the tools.
 
-## Command line
+## Data files
 
-With HinaTracer (or `hinatracer --web`) running, you can control it from a terminal:
+Location, region and ASN come from three free files. **Settings → Download / update all** fetches them, or point to files you already have. Without them those columns show “—”.
 
-```
-hinatracer ping list
-hinatracer ping add 1.1.1.1 --alias cf
-hinatracer ping disable cf
-hinatracer trace new 8.8.8.8 --start
-hinatracer trace show 8.8.8.8
-hinatracer lookup 8.8.8.8 example.com
-hinatracer settings get
-hinatracer settings set theme=dark autoStartPing=true
-hinatracer ping list --json
-hinatracer api GET /api/state
-hinatracer help
-```
+| File | Used for | Source |
+|------|----------|--------|
+| `qqwry.ipdb` | Location | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) |
+| `Country.mmdb` | Region and flag | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
+| `ip2asn-combined.tsv.gz` | ASN, network name, ASN region | [iptoasn.com](https://iptoasn.com/) |
 
-By default the commands connect to the saved WebUI address. Use `--server http://HOST:PORT` (or the `HINATRACER_SERVER` environment variable) for another machine and `--token TOKEN` (or `HINATRACER_TOKEN`) for the API token. Tables are printed by default; add `--json` for JSON.
+These files are subject to their own licenses.
 
-## Monitoring history and CSV export
+## Settings, files and languages
 
-Open the detail window of a ping target (or a traceroute hop). Above the latency chart, choose a range: **Per probe**, **Per minute**, **Per hour**, **Per day**, **Per week** or **Per month**. Aggregated ranges show the average as a line, the min–max band, and loss % as red bars.
-
-On **Settings → Monitoring history**, tick **Save monitoring history to disk** and set how many days to keep (default 90). This covers both Ping and HTTP monitoring: their history and the table statistics. Data is stored as SQLite next to your other data files (`history.db`). Old raw samples are rolled up into minute/hour buckets automatically. When saving is off, only recent in-memory data is used.
-
-**Export CSV** in the detail window (or `GET /api/history.csv`, or `hinatracer ping history <id> --csv`) writes columns `time,target,alias,ip,samples,avg,min,max,loss%`.
-
-When saving is on, the Ping and HTTP tables also keep their totals (counts, success and failure rates, last/avg/min/max) across restarts and keep counting. The median after a restart is taken from the latest 1000 successful samples. **Reset Stats** then clears the saved totals for good, so the app asks first (in the WebUI too); on the command line add `--yes`, and AI clients must pass `confirm`. Traceroute hops are never kept.
-
-## HTTP monitoring
-
-The **HTTP Monitor** page (below Ping Monitor) checks websites and APIs on a schedule.
-
-- Add one URL, or use **Batch add** with one URL per line (an alias may follow after a space).
-- Each target has its own settings (right-click → Edit): method GET / HEAD / POST / PUT / PATCH / DELETE / OPTIONS or a custom one (POST, PUT, PATCH, DELETE and custom methods can send a request body with a Content-Type of your choice), interval (default 30 s), timeout, expected status codes (for example `200-299,301` or `2xx`; empty means 200–399), a text or regular-expression match on the first 1 MB of the page (can be inverted), custom request headers, follow redirects, and ignore TLS certificate errors (off by default).
-- HTTP monitoring does not start by itself when HinaTracer opens unless **Settings → Startup → Auto-start HTTP monitoring on launch** is ticked (off by default, like Ping).
-- In the WebUI, drag the right edge of a column header to change its width; the browser remembers it per table (double-click the edge to reset).
-- The table has the same columns and handling as the Ping table: IP, location, region, ASN and ASN region, success/failure counts, success and failure rates, last/avg/min/max/median response time, status code, last check, last success and last failure. Click headers to sort, Ctrl/Shift-click to select several rows (right-click for actions on all of them), drag to reorder, and column widths are remembered. Double-click a row (or press Enter) for DNS / connect / TLS / TTFB timing, certificate days left and the trend chart (all ranges, CSV export). History is saved together with ping history when **Save monitoring history to disk** is on.
-- Header values are never written to logs and are hidden from guests.
-- The same functions are available in the WebUI, to AI clients (MCP) and on the command line (`hinatracer http list`, `http add <url> ...`, see `hinatracer help`).
-- In every table (Ping, HTTP, Traceroute hops, IP lookup — desktop app, remote mode and WebUI), Ctrl+A selects all rows and the right-click menu has **Copy column**: pick a column to copy that value of every selected row, one per line, in the order shown (empty values are left out).
-- **Desktop alerts** (Settings → Desktop alerts, desktop app only, all off by default): send a system notification when a target goes down (a set number of failures in a row (default 3)) or, optionally, recovers — bursts are grouped into one notification; show a tray icon (show window, start/stop all Ping or HTTP monitoring, quit) and optionally minimize to the tray when closing the window. Works with a remote data source too.
-- In remote data-source mode, Settings clearly separates **Local** settings (this computer only) from **Remote** server settings; local-only options that only apply after switching back are in a collapsed group.
-
-## Remote mode (desktop app as a client)
-
-Settings → **Data source** → **Remote WebUI** lets this window show and control another HinaTracer (for example the server package) instead of this computer.
-
-- Enter the WebUI address and sign in with the admin password, an API token, or as a guest (read-only).
-- The password is only used once to create an API token; it is never saved. The token is kept in your config file, which only your user can read.
-- While remote mode is on, local monitoring stops and the local WebUI page is disabled. The connection status is shown at the top and the app reconnects by itself.
-- Every page works as it does locally: Ping (add, import, edit, reorder, detail charts, CSV), Traceroute tabs, IP lookup and HTTP. As admin, Settings also shows **Remote server settings** (language, theme, data files and downloads, startup, history, updates, WebUI listen address, guest mode and API tokens of the server). Data source, theme and this computer's language stay local. Guests see everything read-only.
-- **Connect automatically at startup** (Settings → Data source, shown after connecting, off by default): the app starts in remote mode and connects with the saved token; if the server is unreachable it shows the status, keeps retrying, and offers **Switch back to local**.
-- Switch back with **Local** → **Switch back to local**.
-
-## Server package (Debian/Ubuntu)
-
-For a headless install that only runs the WebUI under systemd:
-
-```bash
-sudo apt install ./HinaTracer-v<ver>-linux-amd64-server.deb
-```
-
-This installs `/usr/bin/hinatracer`, the unit `hinatracer.service` (user `hinatracer`, `CAP_NET_RAW`, hardened), default config `/etc/hinatracer/config.json` (conffile) and data under `/var/lib/hinatracer`. It listens on `http://127.0.0.1:8790/` by default.
-
-Set an access password (required before binding a non-loopback address):
-
-```bash
-sudo -u hinatracer hinatracer web passwd --config /etc/hinatracer/config.json
-sudo systemctl restart hinatracer
-```
-
-Self-update install is disabled in server mode; use the package manager to upgrade. You can also run `hinatracer --web --server-mode --config /path/to/config.json` without the package.
-
-## Per-browser language
-
-Any WebUI visitor (including guests) can pick a language; it is stored only in the browser (`localStorage`) and never writes the server config. Admins can still change the app-wide language, or tick **This browser only**.
-
-## Configuration and logs
-
-Settings, targets, trace tabs and column layout are stored in `config.json`. If the app crashes, a `crash.log` is written to the same folder.
+Settings, targets and tabs are stored in `config.json`; `history.db` (if enabled) and `crash.log` (after a crash) are in the same folder.
 
 | OS | Folder |
 |----|--------|
 | Windows | `%APPDATA%\hinatracer\` |
 | macOS | `~/Library/Application Support/hinatracer/` |
 | Linux | `~/.config/hinatracer/` |
+| Server package | `/etc/hinatracer/config.json`, data in `/var/lib/hinatracer` |
 
-## Custom language packs
-
-Put a `*.json` language file into a `lang` folder inside the configuration folder above, or next to the app executable. It then appears in **Settings → Language**. A pack with the same `code` as a built-in one overrides its strings, and any missing strings fall back to English. Use the built-in packs in [`i18n/`](i18n/) as a template:
+**Custom language packs.** Put a `*.json` file into a `lang` folder in the folder above (or next to the program). A pack with the same `code` as a built-in one overrides its strings; missing strings fall back to English. Use [`i18n/`](i18n/) as a template:
 
 ```json
-{
-  "name": "English",
-  "code": "en",
-  "strings": {
-    "nav.ping": "Ping Monitor"
-  }
-}
+{ "name": "English", "code": "en", "strings": { "nav.ping": "Ping Monitor" } }
 ```
 
-## Build from source
+## FAQ
 
-Requires the Go version listed in [`go.mod`](go.mod). CGO is not needed.
+**Location / region / ASN shows “—”.** Download the data files (Settings → Download / update all).
 
-```bash
-go build .                # build for the current platform
-go tool mygo build        # build packaged apps into build/
-```
+**Linux: ping fails or traceroute shows only timeouts.** Set `ping_group_range` or `setcap` as in [Download and install](#download-and-install).
+
+**macOS says the app is damaged or from an unidentified developer.** See *macOS first launch* above.
+
+**The WebUI won't start on 0.0.0.0.** Set an access password first.
+
+**I forgot the WebUI password.** Run `hinatracer web passwd` on that computer (`--config` for another file).
+
+**Nothing happens when I open HinaTracer a second time.** It is already running (perhaps in the tray); the existing window is brought to the front.
+
+**Reset Stats asks for confirmation.** When history is saved to disk, resetting deletes the saved totals for good. On the command line add `--yes`.
 
 ## License
 

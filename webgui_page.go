@@ -69,6 +69,11 @@ func (a *app) viewWebUI(c *ui.Context) {
 						ui.TextInput(c, &a.web.portText).Placeholder(i18n.T("ph.web.port")).Width(140)
 					})
 				})
+				if st.Running {
+					if cur, saved := webserver.JoinListen(st.Host, st.Port), webserver.JoinListen(a.webHostPort()); cur != saved {
+						ui.Text(c, i18n.Tf("web.listen.active_differs", cur, saved)).FontSize(12).TextColor(t.Accent)
+					}
+				}
 				host, _ := webserver.NormalizeHost(a.web.hostText)
 				if host != "" && !webserver.IsLoopback(host) {
 					col := t.Accent

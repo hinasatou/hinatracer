@@ -160,6 +160,25 @@ func TestWebLanguageShared(t *testing.T) {
 	if _, r := post("/api/settings/language", map[string]any{"code": "xx"}); r.OK {
 		t.Fatal("unknown language accepted")
 	}
+	// a browser's own language does not change the default
+	_, b = get("/api/i18n?lang=en")
+	var k struct{ Lang, Default string }
+	_ = json.Unmarshal(b, &k)
+	if k.Lang != "en" || k.Default != "ja" || i18n.Language() != "ja" {
+		t.Fatalf("override: %+v", k)
+	}
+}
+
+func TestWebLanguageCardTwoRows(t *testing.T) {
+	js := readAll(t, "webui/app.js")
+	for _, k := range []string{"settings.language_mine", "settings.language_follow", "settings.language_default"} {
+		if !strings.Contains(js, k) {
+			t.Fatalf("missing %s", k)
+		}
+	}
+	if strings.Contains(js, "language_browser_only") {
+		t.Fatal("old checkbox still there")
+	}
 }
 
 func TestWebTraceTabs(t *testing.T) {
@@ -414,5 +433,30 @@ func TestWebConcurrentAndEvents(t *testing.T) {
 	n, _ := io.ReadAtLeast(resp.Body, buf, 20)
 	if !strings.HasPrefix(string(buf[:n]), "event: state\ndata: {") {
 		t.Fatalf("event %q", buf[:n])
+	}
+}
+
+func TestWebStateShowsRunningListener(t *testing.T) {
+	a := freshApp(t)
+	t.Cleanup(a.pingMgr.Stop)
+	// nothing saved: the card used to show the default 127.0.0.1
+	if err := a.startWeb("127.0.0.2", 18797); err != nil {
+		t.Skip("cannot bind 127.0.0.2:", err)
+	}
+	t.Cleanup(a.stopWeb)
+	var st wsState
+	_ = a.run(func() { st = a.webBuildState() })
+	ws := a.web.srv.Status()
+	if st.Web.Listen != webserver.JoinListen("127.0.0.2", ws.Port) || st.Web.Host != webserver.DefaultHost {
+		t.Fatalf("listen %q saved %q", st.Web.Listen, st.Web.Host)
+	}
+	if g := st.forRole(webserver.RoleGuest); g.Web.Listen != "" {
+		t.Fatal("guest sees the listener")
+	}
+	tt := ui.NewTester(locked(a, a.viewWebUI), 1100, 1400)
+	tt.Frame()
+	saved := webserver.JoinListen(a.webHostPort())
+	if !tt.HasText(i18n.Tf("web.listen.active_differs", st.Web.Listen, saved)) {
+		t.Fatalf("GUI: %v", tt.Texts())
 	}
 }

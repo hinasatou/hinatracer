@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"hinatracer/i18n"
+	"hinatracer/internal/webserver"
 )
 
 // remoteServerUI is the draft state of the 「远程服务器设置」 card.
@@ -22,6 +23,7 @@ type remoteServerUI struct {
 	histSave                 bool
 	histDays                 string
 	webHost, webPort         string
+	webListen, webSaved      string // the server's running listener / saved address
 	webAuto, guest           bool
 	tokens                   []webTokenView
 	tokName, tokRole, newTok string
@@ -42,7 +44,10 @@ func (a *app) syncRemoteServerDraft(st wsState) {
 	s.checkOnRun = st.Settings.UpdateCheckOnStart
 	s.histSave, s.histDays = st.Settings.HistorySave, strconv.Itoa(st.Settings.HistoryDays)
 	s.webHost, s.webAuto, s.guest = st.Web.Host, st.Web.AutoStart, st.Web.Guest
-	s.webPort = ""
+	s.webPort, s.webListen, s.webSaved = "", st.Web.Listen, ""
+	if st.Web.Host != "" && st.Web.Port > 0 {
+		s.webSaved = webserver.JoinListen(st.Web.Host, st.Web.Port)
+	}
 	if st.Web.Port > 0 {
 		s.webPort = strconv.Itoa(st.Web.Port)
 	}
@@ -269,6 +274,9 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 				}
 			}
 		})
+		if s.webListen != "" && s.webSaved != "" && s.webListen != s.webSaved {
+			ui.Text(c, i18n.Tf("web.listen.active_differs", s.webListen, s.webSaved)).FontSize(12).TextColor(t.Accent)
+		}
 		ui.Text(c, i18n.T("remote.server.listen_note")).FontSize(11).TextColor(t.TextMuted)
 		if ui.Checkbox(c, &s.guest, i18n.T("web.guest.allow")).Changed() {
 			a.remoteSet("/api/web/guest", map[string]bool{"enabled": s.guest})

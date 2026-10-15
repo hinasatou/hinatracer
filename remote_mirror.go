@@ -156,8 +156,9 @@ func (a *app) applyRemoteMirror(st wsState) {
 			a.traceActive = i
 		}
 	}
-	// edits made on adopted tabs go out now
-	a.persistRemote()
+	// edits made on adopted tabs go out now (never the active tab: that
+	// is only sent when the user switches tabs)
+	a.persistRemoteTabs(false)
 
 	// IP lookup (a guest's rows are its own query results)
 	if a.readOnly() {
@@ -187,7 +188,9 @@ func (a *app) applyRemoteMirror(st wsState) {
 // persistRemote sends local edits of mirrored state (trace tab fields,
 // the active tab) instead of writing them into the local config. Ping
 // and lookup changes go out from their own actions.
-func (a *app) persistRemote() {
+func (a *app) persistRemote() { a.persistRemoteTabs(true) }
+
+func (a *app) persistRemoteTabs(syncActive bool) {
 	rc, m := a.remote, &a.rmir
 	if rc == nil || a.readOnly() {
 		return
@@ -208,7 +211,7 @@ func (a *app) persistRemote() {
 		rc.Enqueue("/api/trace/update", map[string]any{"id": t.ID, "host": now.Host, "alias": now.Alias,
 			"mtr": now.MTR, "interval": now.Interval}, nil)
 	}
-	if a.traceActive >= 0 && a.traceActive < len(a.traceTabs) {
+	if syncActive && a.traceActive >= 0 && a.traceActive < len(a.traceTabs) {
 		if id := a.traceTabs[a.traceActive].ID; id > 0 && id != m.active {
 			m.active = id
 			rc.Enqueue("/api/trace/active", map[string]any{"id": id}, nil)

@@ -186,6 +186,7 @@ type wsState struct {
 	Web struct {
 		Host        string `json:"host"`
 		Port        int    `json:"port"`
+		Listen      string `json:"listen,omitempty"` // the running listener (may differ from host:port)
 		HasPassword bool   `json:"hasPassword"`
 		Headless    bool   `json:"headless"`
 		Guest       bool   `json:"guest"`     // guest login switched on
@@ -338,6 +339,9 @@ func (a *app) webBuildState() wsState {
 
 	h, p := a.webHostPort()
 	s.Web.Host, s.Web.Port = h, p
+	if ws := a.web.srv.Status(); ws.Running {
+		s.Web.Listen = webserver.JoinListen(ws.Host, ws.Port)
+	}
 	s.Web.HasPassword = a.webPasswordHash() != ""
 	s.Web.Headless = a.win == nil
 	s.Web.Guest = a.cfg.WebGuest
@@ -369,7 +373,7 @@ func (s wsState) forRole(role webserver.Role) wsState {
 		files[i] = f
 	}
 	s.DataDL.Files = files
-	s.Web.Host, s.Web.Port, s.Web.Guest, s.Web.AutoStart = "", 0, false, false
+	s.Web.Host, s.Web.Port, s.Web.Listen, s.Web.Guest, s.Web.AutoStart = "", 0, "", false, false
 	return s
 }
 
@@ -538,7 +542,7 @@ func (a *app) webHandler() http.Handler {
 				lang, strs = want, i18n.StringsFor(want)
 			}
 		}
-		writeJSON(w, 200, map[string]any{"lang": lang, "langs": langs, "strings": strs})
+		writeJSON(w, 200, map[string]any{"lang": lang, "default": i18n.Language(), "langs": langs, "strings": strs})
 	})
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		var st wsState

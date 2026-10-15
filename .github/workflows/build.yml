@@ -123,6 +123,14 @@ jobs:
             zip="dist/HinaTracer-v${VERSION}-macos-${arch}.zip"
             ditto -c -k --keepParent "$app" "$zip"
             zip -j "$zip" LICENSE README.md
+            # DMG installer: the app plus a link to /Applications to drag onto.
+            # The zip above stays: the built-in updater downloads it.
+            stage="$(mktemp -d)"
+            ditto "$app" "$stage/HinaTracer.app"
+            ln -s /Applications "$stage/Applications"
+            hdiutil create -volname HinaTracer -srcfolder "$stage" -ov -format UDZO \
+              "dist/HinaTracer-v${VERSION}-macos-${arch}.dmg"
+            rm -rf "$stage"
           done
           ls -la dist/
 

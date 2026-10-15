@@ -4,117 +4,178 @@
 
 <img src="resources/icon.png" width="96" height="96" alt="HinaTracer 图标" />
 
-适用于 Windows、macOS 和 Linux 的原生桌面网络工具：持续 Ping（ICMP / TCP）、路由追踪 / MTR 与 IP 查询，每个地址都附带位置、地区和 ASN 信息。
+适用于 Windows、macOS 和 Linux 的网络工具：Ping 与 HTTP 监测、路由追踪 / MTR、IP 查询，每个地址都显示位置、地区和 ASN。可以作为桌面程序使用，也可以在浏览器（WebUI）、命令行或 AI 助手（MCP）中使用。
+
+## 目录
+
+- [功能](#功能)
+- [下载与安装](#下载与安装)
+- [快速上手](#快速上手)
+- [WebUI](#webui)
+- [远程数据源](#远程数据源)
+- [命令行](#命令行)
+- [AI 客户端 MCP](#ai-客户端-mcp)
+- [数据文件](#数据文件)
+- [设置、文件与语言](#设置文件与语言)
+- [常见问题](#常见问题)
+- [许可证](#许可证)
 
 ## 功能
 
-- **Ping 监测**：同时监测多个目标，实时显示成功率、丢包率，以及最近 / 平均 / 最小 / 最大 / 中位延迟。可单独启用或禁用、设置别名、查看详情，支持逐个添加或批量导入。
-- **TCP Ping**：为目标加上端口（如 `example.com:443`），即改为测量 TCP 连接耗时，而非发送 ICMP。
-- **路由追踪 / MTR**：每个追踪独占一个页签。MTR 模式持续探测每一跳，可一键全部开始或停止，任意跳点可一键加入 Ping 监测。
-- **IP 查询**：输入 IP 或域名（每行一条），域名会解析出全部 IPv4 / IPv6 地址，并对每个地址快速测一次延迟。
-- **地区与 ASN 信息**：每个地址显示位置、地区（带旗帜）、ASN / 网络名称及 ASN 注册地区，支持 IPv4 和 IPv6。
-- **好用的表格**：任意列排序，可调整列宽和顺序（重启后保留），支持多选并通过右键批量操作。
-- **检查更新**：可在启动时检查 GitHub Releases（仅正式版，或包含预览版），并可自动下载、校验和安装新版本。
-- **WebUI**：在浏览器中使用全部功能，可从桌面版启动，也可无窗口运行（`--web`），支持访问密码。
-- **语言与主题**：中文(简体)、中文(繁體)、日本語、English，并支持自定义语言包；浅色、深色或跟随系统。
+### Ping 与 HTTP 监测
+- 同时监测多个目标：成功/失败次数与比例，最近 / 平均 / 最小 / 最大 / 中位延迟，IP、位置、地区和 ASN。
+- ICMP Ping（`example.com`、`1.1.1.1`、`2606:4700:4700::1111`），或带端口的 TCP Ping（`example.com:443`、`[2606:4700:4700::1111]:443`）。
+- HTTP 监测网站和 API：请求方法（GET、HEAD、POST、PUT、PATCH、DELETE、OPTIONS 或自定义）、请求体与 Content-Type、间隔、超时、期望状态码（如 `200-299,301` 或 `2xx`；留空为 200–399）、文本或正则匹配（可取反）、自定义请求头、跟随重定向、忽略 TLS 错误。详情窗口显示 DNS / 连接 / TLS / 首字节耗时和证书剩余天数。
+- 启用 / 禁用、别名、拖动排序、批量导入、启动时自动开始（默认关闭）。
 
-## 下载
+### 路由追踪 / MTR
+- 每个追踪在单独的标签页中运行；MTR 模式持续探测每一跳。可以一键全部开始或停止。
+- 在 Ping 目标或 IP 查询结果上右键即可追踪；某一跳可以一键加入 Ping 监测。
 
-请前往 **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)** 下载最新版本。
+### IP 查询
+- 查询 IP 或域名，每行一个。域名会解析出全部 IPv4 和 IPv6 地址，并分别测一次延迟。
+
+### 历史与图表
+- 双击某一行（或按 Enter）打开详情窗口查看延迟图表：按每次探测、每分钟、小时、天、周或月（平均线、最小–最大区间、丢包柱、十字准线）。
+- 可选把 Ping 和 HTTP 的历史与表格统计保存到磁盘（SQLite，默认保留 90 天），重启后统计继续累计。
+- 导出 CSV：`time,target,alias,ip,samples,avg,min,max,loss%`。
+
+### 表格
+- 任意列排序，调整列宽和列顺序（会记住），Ctrl/⌘ 或 Shift 多选（Ctrl+A / ⌘+A 全选），右键对所有选中行操作。
+- **复制列**：把选中行的某一列复制出来，每行一个值。
+
+### 桌面提醒
+在 **设置 → 桌面提醒** 中，默认全部关闭（仅桌面程序）：
+- 目标掉线（连续失败达到设定次数，默认 3 次，可设 1–100）时发送系统通知，可选恢复时也通知。适用于正在运行的 Ping 和 HTTP 监测；短时间内的多条会合并为一条。
+- 托盘图标（显示窗口、全部开始/停止 Ping 或 HTTP 监测、退出），可选关闭窗口时最小化到托盘。
+
+### WebUI、远程数据源、命令行与 MCP
+- **WebUI**：在浏览器中使用全部功能，可以从桌面程序启动，也可以无窗口运行（`--web`），支持密码、访客模式和 API 令牌。
+- **远程数据源**：桌面程序可以显示并控制另一台 HinaTracer，例如 Linux 服务器。
+- **命令行** 和 **MCP**，方便脚本和 AI 助手使用。
+
+### 其他
+- 检查更新（正式版或预发布版），自动下载、校验并安装新版本。
+- 中文(简体)、中文(繁體)、日本語、English，也支持自定义语言包；浅色、深色或跟随系统主题。
+- 桌面程序只会运行一个：再次打开 HinaTracer 会把已运行的窗口带到前面。
+
+## 下载与安装
+
+从 **[GitHub Releases](https://github.com/hinasatou/hinatracer/releases)** 下载最新版本。
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
 | Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64-setup.exe` | 安装程序（推荐），为当前用户安装，无需管理员权限 |
-| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64.zip` | 便携版，解压后运行 `HinaTracer.exe` |
-| macOS (Apple 芯片) | `HinaTracer-vX.Y.Z-macos-arm64.zip` | 内含 `HinaTracer.app` |
-| macOS (Intel) | `HinaTracer-vX.Y.Z-macos-amd64.zip` | 内含 `HinaTracer.app` |
-| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.deb` | 适用于 Debian / Ubuntu 及其衍生版 |
-| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | 便携二进制，附桌面入口和图标 |
-| 全部 | `SHA256SUMS.txt` | 用于校验下载文件 |
+| Windows (x64) | `HinaTracer-vX.Y.Z-windows-amd64.zip` | 便携版：解压后运行 `HinaTracer.exe` |
+| macOS (Apple 芯片 / Intel) | `HinaTracer-vX.Y.Z-macos-arm64.dmg` / `-macos-amd64.dmg` | 安装磁盘映像（推荐） |
+| macOS (Apple 芯片 / Intel) | `HinaTracer-vX.Y.Z-macos-arm64.zip` / `-macos-amd64.zip` | 内含 `HinaTracer.app` |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.deb` | Debian / Ubuntu 桌面程序 |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64.tar.gz` | 便携桌面程序，含图标 |
+| Linux (x64) | `HinaTracer-vX.Y.Z-linux-amd64` | 单个可执行文件（桌面、`--web` 或命令行） |
+| Linux 服务器 | `HinaTracer-vX.Y.Z-linux-amd64-server.deb` | 只运行 WebUI，作为 systemd 服务 |
+| 全部 | `SHA256SUMS.txt` | 校验和 |
 
-## 平台说明
+**macOS 安装。** 打开 `.dmg`，把 **HinaTracer** 拖到 **Applications**（应用程序）文件夹。
 
-**Linux：Ping 权限。** 如果 Ping 因权限失败，可允许非特权 ICMP，或为程序授予原始套接字权限：
-
-```bash
-sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"   # 重启前有效
-sudo setcap cap_net_raw+ep /path/to/hinatracer              # 或者一次性设置
-```
-
-两种方式下路由追踪 / MTR 都能显示每一跳：有该权限（或以 root、服务器安装包的服务运行）时使用原始 ICMP 套接字；没有时使用非特权 ICMP 套接字，并从套接字的错误队列读取各路由器的回应。
-
-**macOS：首次打开。** 应用未经 Apple 签名，可能被 Gatekeeper 拦截。右键点击 `HinaTracer.app` 选择 **打开**，或执行：
+**macOS 首次打开。** 程序没有苹果签名，macOS 可能提示无法验证开发者，或建议移到废纸篓。右键 `HinaTracer.app` → **打开**（或 **系统设置 → 隐私与安全性 → 仍要打开**），或者执行一次：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/HinaTracer.app
 ```
 
-## 数据文件
+**Linux Ping 权限。** 如果 Ping 提示权限错误，允许非特权 ICMP，或给程序加上原始套接字权限：
 
-位置、地区和 ASN 信息来自三份免费数据文件。在 **设置** 中点击 **下载/更新全部** 即可一次获取（也可以指定已有文件）。缺少数据文件时程序照常运行，只是相关列显示“—”。
+```bash
+sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"   # 重启前有效
+sudo setcap cap_net_raw+ep /path/to/hinatracer              # 或者这个，一次即可
+```
 
-| 文件 | 用途 | 来源 |
-|------|------|------|
-| `qqwry.ipdb` | 位置 | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) |
-| `Country.mmdb` | 地区与旗帜 | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
-| `ip2asn-combined.tsv.gz` | ASN、网络名称与 ASN 地区 | [iptoasn.com](https://iptoasn.com/) |
+两种方式下路由追踪 / MTR 都能显示每一跳，普通用户也可以。
 
-这些文件由各自项目提供，遵循其各自的许可协议。
+**Linux 服务器包（Debian / Ubuntu）。** 只运行 WebUI，由 systemd 管理：
 
-## 使用提示
+```bash
+sudo apt install ./HinaTracer-vX.Y.Z-linux-amd64-server.deb
+sudo -u hinatracer hinatracer web passwd --config /etc/hinatracer/config.json
+sudo systemctl restart hinatracer
+```
 
-- **目标格式**：`example.com`、`1.1.1.1`、`2606:4700:4700::1111` 使用 ICMP；`example.com:443`、`1.1.1.1:443`、`[2606:4700:4700::1111]:443` 使用 TCP Ping。带端口的 IPv6 地址须加方括号。
-- **批量导入**（Ping 监测 → **批量导入**）：每行一个目标，可在逗号后加别名：`host,alias` 或 `host:port,alias`。以 `#` 开头的行会被忽略。
-- **多选**：Ctrl+单击（macOS 为 ⌘+单击）添加或取消一行，Shift+单击选择一段范围，Ctrl+A / ⌘+A 全选。多选时右键菜单只显示适用于全部所选行的操作，如启用 / 禁用 / 删除或添加到 Ping。
-- **详情**：双击某行或按 Enter 打开详情窗口。
-- **随处发起追踪**：在 Ping 目标或 IP 查询结果上右键即可追踪；TCP 目标会追踪到对应主机。
+它会安装 `/usr/bin/hinatracer`、服务 `hinatracer.service`（用户 `hinatracer`，带 `CAP_NET_RAW`）、配置 `/etc/hinatracer/config.json`，数据放在 `/var/lib/hinatracer`，默认监听 `http://127.0.0.1:8790/`。监听其他地址前必须设置密码。请用包管理器升级（这里内置更新只提示新版本）。
 
-## WebUI（在浏览器中使用）
+## 快速上手
 
-桌面版的全部功能（Ping 监测、路由追踪 / MTR、IP 查询、数据文件下载和设置）都可以在网页中使用。网页与桌面窗口共用同一份设置和正在运行的任务，在一端添加的目标会立即出现在另一端。
+1. 启动 HinaTracer，在 **设置 → 下载/更新全部** 获取[数据文件](#数据文件)（可选，用于位置、地区和 ASN）。
+2. **Ping 监测**：输入主机（`1.1.1.1`、`example.com:443`）并点 **添加**，或用 **批量导入**，每行一个 `主机` 或 `主机,别名`（`#` 开头为注释）。点 **开始监测**。
+3. **HTTP 监测**：添加一个 URL，或用 **批量添加**，每行一个 `URL 别名`。右键 → **编辑** 设置方法、状态码、匹配和请求头。
+4. **路由追踪**：在标签页中输入主机，点 **开始追踪**；勾选 MTR 模式可持续探测。
+5. **IP 查询**：粘贴 IP 或域名，每行一个。
+6. 双击任意一行查看详情和图表。
 
-**在桌面版中启动**：打开 **WebUI** 页面，设置绑定 IP 和端口，点击 **启动**。页面上会显示访问地址，可以复制或直接在浏览器中打开。勾选「打开 HinaTracer 时自动启动 Web 服务」后，每次打开程序都会自动启动。
+## WebUI
 
-**无窗口运行**（适合服务器或常开的电脑）：
+**启动方式**：在桌面程序的 **WebUI** 页面选择绑定 IP 和端口，点 **启动**；勾选 *打开 HinaTracer 时自动启动 Web 服务* 可每次自动运行。也可以无窗口运行：
 
 ```
-hinatracer --web                                # 使用保存的地址，默认 127.0.0.1:8790
+hinatracer --web                                # 使用已保存的地址，默认 127.0.0.1:8790
 hinatracer --web --listen 0.0.0.0:8790          # 允许其他设备访问（需要密码）
 hinatracer --web --web-host 127.0.0.1 --web-port 9000
-hinatracer --help
 ```
 
-访问地址会显示在终端中，并写入 `config.json` 所在目录的 `web.log`。按 Ctrl+C 停止。
+浏览器和桌面窗口共享同一份设置和正在运行的任务。无窗口模式会把地址打印出来，并写入 `config.json` 旁边的 `web.log`；按 Ctrl+C 停止。WebUI 页面始终显示服务器实际监听的地址。
 
-**访问保护**
-
-- 默认地址 `127.0.0.1` 只能在本机打开。
-- 若要让其他设备访问（例如 `0.0.0.0`），请先在 WebUI 页面设置**访问密码**；未设置密码时不会监听这类地址。无窗口模式下也可以用环境变量 `HINATRACER_WEB_PASSWORD` 设置密码。
-- 设置密码后，打开网页需要先登录；修改密码会让所有浏览器退出登录。
-- 网页使用 HTTP。在不信任的网络中，请保持 `127.0.0.1`，或通过 HTTPS 反向代理访问。
-
-## 访客模式
-
-在 **WebUI** 页面设置访问密码后，勾选 **允许访客模式**。登录页会多出 **以访客身份登录** 按钮：访客无需密码，可以查看所有监测结果，但不能做任何修改（不能添加或删除目标、开始或停止、修改设置、下载数据或更新），也看不到文件路径和访问设置。页面顶部会显示 **访客** 标记。关闭访客模式后，访客会被退出登录。
-
-## API 令牌
-
-在 **WebUI** 页面（桌面版，或网页的设置页）创建令牌：填写名称并选择权限：
-
-- **管理员**：可以查看和修改所有内容。
-- **访客**：只能查看。
-
-令牌**只显示一次**，请立即复制保存。程序只保存令牌的指纹，丢失后无法找回，只能吊销后重新创建。
-
-## AI 客户端（MCP）
-
-WebUI 运行时，HinaTracer 同时是一个 MCP 服务器，支持 MCP 的 AI 助手可以读取监测结果；使用管理员令牌时，还可以替你管理目标和路由追踪。地址显示在 WebUI 页面上：
+**密码。** `127.0.0.1` 只能本机访问。其他地址都需要访问密码，可在 WebUI 页面设置，或者：
 
 ```
-http://127.0.0.1:8790/mcp
+hinatracer web passwd                       # 提示输入密码
+hinatracer web passwd --config FILE         # 指定其他配置文件
+hinatracer web passwd --clear               # 清除密码
 ```
 
-在 AI 客户端中把它添加为远程（HTTP）MCP 服务器，并在 `Authorization` 请求头中带上 API 令牌，例如：
+也可以用环境变量 `HINATRACER_WEB_PASSWORD`。密码只以加盐哈希保存，不会显示出来。修改密码会让所有浏览器退出登录。WebUI 使用普通 HTTP：在不可信的网络中请保持 `127.0.0.1`，或放在 HTTPS 反向代理后面。
+
+**访客模式。** 设置密码后勾选 **允许访客模式**。访客无需密码即可登录，能查看全部内容但不能修改；看不到文件路径、访问设置和 HTTP 请求头的值。
+
+**API 令牌。** 在 WebUI 页面创建令牌，角色为 **管理员**（完全权限）或 **访客**（只读）。令牌只显示一次；丢失后只能吊销并重新创建。
+
+**语言。** **设置 → 外观 → 我的语言** 只对当前浏览器生效（所有人都能设置，包括访客；选 **跟随默认** 即取消）。管理员还能设置 **默认语言**，它会写入配置。
+
+## 远程数据源
+
+**设置 → 数据源 → 远程 WebUI** 让桌面窗口显示并控制另一台 HinaTracer，而不是本机。
+
+- 输入 WebUI 地址，用管理员密码、API 令牌或访客身份（只读）登录。密码只用来创建一次令牌，不会保存。
+- 每个页面的用法都和本地一样。设置页把 **本机** 设置和 **远程** 服务器设置分开显示。
+- 退出程序或切换回本地，都不会停止服务器上的任何任务。
+- **启动时自动连接远程 WebUI**（连接成功后才显示，默认关闭）。用 **切换回本地** 回到本机。
+
+## 命令行
+
+在桌面程序的 WebUI 或 `hinatracer --web` 运行时，可以从终端控制它。运行 `hinatracer help` 查看全部选项。
+
+| 命令 | 用途 |
+|------|------|
+| `ping list` / `ping add <host> [--alias A]` / `ping import <file>` | Ping 目标 |
+| `ping enable` / `disable` / `delete` / `alias` / `move` `<id\|host>` | 编辑目标 |
+| `ping start` / `ping stop` / `ping reset [--yes]` / `ping interval <s>` | 运行与重置 |
+| `ping history <id\|host> [--range R] [--csv]` | 历史（R：probe、minute、hour、day、week、month） |
+| `http list` / `http add <url> [options]` / `http edit` / `http import` | HTTP 目标 |
+| `http start` / `http stop` / `http reset [--yes]` / `http history` | 运行、重置、历史 |
+| `trace list` / `trace new [host] [--mtr true] [--start]` / `trace show <tab>` | 路由追踪标签页 |
+| `trace start\|stop\|close <tab>` / `trace startall` / `trace stopall` | 控制标签页 |
+| `lookup <ip\|domain>...` | IP 查询 |
+| `settings get` / `settings set key=value...` | 设置 |
+| `data download` / `update check` | 数据文件与更新 |
+| `web status` / `web listen` / `web guest on\|off` / `web passwd` | WebUI 访问 |
+| `token list` / `token create <name> [--role admin\|guest]` / `token revoke <id>` | API 令牌 |
+| `info` / `mcp tools` / `api <METHOD> <PATH> [JSON]` | 其他 |
+
+通用选项：`--server URL`（或 `HINATRACER_SERVER`，默认为已保存的 WebUI 地址）、`--token TOKEN`（或 `HINATRACER_TOKEN`，本机且未设密码时不需要）和 `--json`。
+
+程序选项：`--web`、`--listen ADDR`、`--web-host`、`--web-port`、`--config FILE`（或 `HINATRACER_CONFIG`）、`--server-mode`、`--version`、`--help`。
+
+## AI 客户端 MCP
+
+WebUI 运行时，HinaTracer 同时是一个 MCP 服务器（Streamable HTTP），地址为 `http://HOST:PORT/mcp`。在 AI 客户端中添加它并带上 API 令牌：
 
 ```json
 {
@@ -128,120 +189,53 @@ http://127.0.0.1:8790/mcp
 }
 ```
 
-使用访客令牌时，AI 助手只能查看。未设置访问密码时，本机的客户端无需令牌即可连接。
+访客令牌只能读取；管理员令牌还能管理目标、路由追踪和设置。未设置访问密码时，本机客户端不需要令牌。`hinatracer mcp tools` 可列出所有工具。
 
-## 命令行
+## 数据文件
 
-HinaTracer（或 `hinatracer --web`）运行时，可以在终端中控制它：
+位置、地区和 ASN 来自三个免费文件。**设置 → 下载/更新全部** 可一次获取，也可以指定已有的文件。没有这些文件时，相关列显示“—”。
 
-```
-hinatracer ping list
-hinatracer ping add 1.1.1.1 --alias cf
-hinatracer ping disable cf
-hinatracer trace new 8.8.8.8 --start
-hinatracer trace show 8.8.8.8
-hinatracer lookup 8.8.8.8 example.com
-hinatracer settings get
-hinatracer settings set theme=dark autoStartPing=true
-hinatracer ping list --json
-hinatracer api GET /api/state
-hinatracer help
-```
+| 文件 | 用途 | 来源 |
+|------|------|------|
+| `qqwry.ipdb` | 位置 | [nmgliangwei/qqwry.ipdb](https://github.com/nmgliangwei/qqwry.ipdb) |
+| `Country.mmdb` | 地区与旗帜 | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
+| `ip2asn-combined.tsv.gz` | ASN、网络名称、ASN 地区 | [iptoasn.com](https://iptoasn.com/) |
 
-命令默认连接保存的 WebUI 地址。用 `--server http://主机:端口`（或环境变量 `HINATRACER_SERVER`）连接其他电脑，用 `--token 令牌`（或 `HINATRACER_TOKEN`）指定 API 令牌。默认输出表格，加上 `--json` 输出 JSON。
+这些文件遵循各自的许可证。
 
-## 监测历史与 CSV 导出
+## 设置、文件与语言
 
-打开 Ping 目标（或路由跳）的详情窗口，在延迟图上方选择范围：**按次**、**按分钟**、**按小时**、**按天**、**按周**、**按月**。汇总范围会显示平均值曲线、最小–最大阴影带，以及红色丢包率柱。
+设置、目标和标签页保存在 `config.json` 中；`history.db`（开启时）和 `crash.log`（崩溃后）在同一文件夹。
 
-在 **设置 → 监测历史** 中勾选 **保存监测历史到磁盘**，并设置保留天数（默认 90）。包括 Ping 与 HTTP 监测的历史和表格统计。数据以 SQLite 保存在数据目录的 `history.db`。旧的原始采样会自动汇总为分钟/小时数据。关闭保存时只使用内存中最近的数据。
-
-详情窗口的 **导出 CSV**（或 `GET /api/history.csv`，或 `hinatracer ping history <id> --csv`）会写出列：`time,target,alias,ip,samples,avg,min,max,loss%`。
-
-开启保存后，Ping 与 HTTP 列表的累计统计（次数、成功率、失败率、最近/平均/最小/最大）在重启后保留并继续累计；重启后的中位值取自最近 1000 个成功样本。此时**重置统计**会永久清除已保存的统计，因此会先弹出确认（WebUI 同样如此）；命令行需加 `--yes`，AI 客户端需传 `confirm`。Traceroute 各跳不保存。
-
-## HTTP 监测
-
-「HTTP 监测」页（在 Ping 监测下方）按周期检查网站和 API。
-
-- 可添加单个 URL，或用「批量添加」每行一个 URL（空格后可写别名）。
-- 每个目标可单独设置（右键 → 编辑）：方法 GET / HEAD / POST / PUT / PATCH / DELETE / OPTIONS 或自定义（POST、PUT、PATCH、DELETE 和自定义方法可发送请求体，并可指定 Content-Type）、间隔（默认 30 秒）、超时、期望状态码（如 `200-299,301` 或 `2xx`，留空为 200–399）、对页面前 1 MB 的文本或正则匹配（可反向）、自定义请求头、跟随重定向、忽略 TLS 证书错误（默认关闭）。
-- 打开 HinaTracer 时 HTTP 监测默认不会自动开始；如需自动开始，请在 **设置 → 启动选项** 勾选 **启动时自动开始 HTTP 监测**（默认关闭，与 Ping 一致）。
-- 在 WebUI 中拖动列标题右边缘可调整列宽，浏览器会按表格分别记住（双击边缘恢复默认）。
-- 列表与 Ping 列表相同：IP、位置、地区、ASN、ASN 地区、成功/失败次数、成功率与失败率、最近/平均/最小/最大/中位值响应时间、状态码、最近检测、最近成功与最近失败。可点表头排序、Ctrl/Shift 多选（右键对所选批量操作）、拖动排序，并记住列宽。双击一行（或按 Enter）查看 DNS / 连接 / TLS / 首字节耗时、证书剩余天数与趋势图（所有范围，可导出 CSV）。开启保存后历史与 Ping 一样写入磁盘。
-- 请求头的值不会写入日志，访客也看不到。
-- 同样的功能在 WebUI、AI 客户端（MCP）和命令行中都可用（`hinatracer http list`、`http add <url> ...`，详见 `hinatracer help`）。
-- 所有表格（Ping、HTTP、路由追踪各跳、IP 查询；桌面版、远程模式和 WebUI）都支持 Ctrl+A 全选；右键菜单中的 **复制列** 可选一列，把所选各行该列的值按当前显示顺序复制，每行一个（空值会跳过）。
-- **桌面提醒**（设置 → 桌面提醒，仅桌面版，默认全部关闭）：目标掉线（连续失败达到设定次数，默认 3 次）或恢复（可选）时发送系统通知，短时间内的多条会合并为一条；显示托盘图标（显示窗口、全部开始/停止 Ping 或 HTTP 监测、退出），并可在关闭窗口时最小化到托盘。使用远程数据源时同样有效。
-- 使用远程数据源时，设置页会明确区分 **本机** 设置（仅影响这台电脑）和 **远程** 服务器设置；只在切回本地数据源后才生效的本机选项放在折叠的分组里。
-
-## 远程模式（桌面程序作为客户端）
-
-设置 →「数据源」→「远程 WebUI」可让本窗口显示并控制另一台 HinaTracer（例如服务器软件包），而不是本机。
-
-- 填写 WebUI 地址，用管理员密码、API 令牌或访客（只读）登录。
-- 密码只用于一次性换取 API 令牌，不会被保存；令牌保存在仅当前用户可读的配置文件中。
-- 远程模式下本机监测停止，本机 WebUI 页停用；顶部显示连接状态，断线会自动重连。
-- 各页面与本机使用一致：Ping（添加、导入、编辑、排序、详情图表、CSV）、Traceroute 标签页、IP 查询与 HTTP。管理员在设置中还会看到「远程服务器设置」（服务器的语言、主题、数据文件与下载、启动选项、历史、更新、WebUI 监听地址、访客模式与 API 令牌）。数据源、主题和本机语言只影响本机。访客一切只读。
-- **启动时自动连接远程 WebUI**（设置 → 数据源，连接成功后显示，默认关闭）：程序启动时直接进入远程模式并用已保存的令牌连接；服务器连不上时显示状态并持续重试，也可以一键切换回本地。
-- 在「本地」→「切换回本地」即可恢复。
-
-## 服务器软件包（Debian/Ubuntu）
-
-仅运行 WebUI、由 systemd 托管的无界面安装：
-
-```bash
-sudo apt install ./HinaTracer-v<ver>-linux-amd64-server.deb
-```
-
-会安装 `/usr/bin/hinatracer`、单元 `hinatracer.service`（用户 `hinatracer`，`CAP_NET_RAW`，加固）、默认配置 `/etc/hinatracer/config.json`（conffile）以及数据目录 `/var/lib/hinatracer`。默认监听 `http://127.0.0.1:8790/`。
-
-设置访问密码（绑定非回环地址前必须）：
-
-```bash
-sudo -u hinatracer hinatracer web passwd --config /etc/hinatracer/config.json
-sudo systemctl restart hinatracer
-```
-
-服务器模式不会自动安装更新，请用软件包管理器升级。也可以不装包直接运行：`hinatracer --web --server-mode --config /path/to/config.json`。
-
-## 按浏览器选择语言
-
-任何 WebUI 访客（包括访客模式）都可以选择界面语言；只保存在本浏览器（`localStorage`），不会写入服务器配置。管理员仍可改全局语言，或勾选 **仅此浏览器**。
-
-## 配置与日志
-
-设置、目标、追踪页签和列布局保存在 `config.json` 中。程序崩溃时会在同一目录写入 `crash.log`。
-
-| 系统 | 目录 |
-|------|------|
+| 系统 | 文件夹 |
+|------|--------|
 | Windows | `%APPDATA%\hinatracer\` |
 | macOS | `~/Library/Application Support/hinatracer/` |
 | Linux | `~/.config/hinatracer/` |
+| 服务器包 | `/etc/hinatracer/config.json`，数据在 `/var/lib/hinatracer` |
 
-## 自定义语言包
-
-将 `*.json` 语言文件放入上述配置目录下的 `lang` 文件夹，或程序所在目录的 `lang` 文件夹，即可在 **设置 → 语言** 中选择。与内置语言包 `code` 相同时会覆盖对应文本，缺失的文本回退为英文。可参考 [`i18n/`](i18n/) 中的内置语言包：
+**自定义语言包。** 把 `*.json` 文件放进上面文件夹（或程序旁边）的 `lang` 文件夹。`code` 与内置语言相同的包会覆盖其文字；缺少的文字会回退到英文。可以参考 [`i18n/`](i18n/) 中的内置语言包：
 
 ```json
-{
-  "name": "English",
-  "code": "en",
-  "strings": {
-    "nav.ping": "Ping Monitor"
-  }
-}
+{ "name": "English", "code": "en", "strings": { "nav.ping": "Ping Monitor" } }
 ```
 
-## 从源码构建
+## 常见问题
 
-需要 [`go.mod`](go.mod) 中注明的 Go 版本，无需 CGO。
+**位置 / 地区 / ASN 显示“—”。** 下载数据文件（设置 → 下载/更新全部）。
 
-```bash
-go build .                # 为当前平台构建
-go tool mygo build        # 在 build/ 中生成打包好的应用
-```
+**Linux：Ping 失败或路由追踪全是超时。** 按[下载与安装](#下载与安装)中的方法设置 `ping_group_range` 或 `setcap`。
+
+**macOS 提示程序已损坏或来自身份不明的开发者。** 见上面的 *macOS 首次打开*。
+
+**WebUI 无法在 0.0.0.0 上启动。** 先设置访问密码。
+
+**忘记了 WebUI 密码。** 在那台电脑上运行 `hinatracer web passwd`（其他配置文件加 `--config`）。
+
+**第二次打开 HinaTracer 没反应。** 程序已经在运行（可能在托盘里）；已有的窗口会被带到前面。
+
+**重置统计时要求确认。** 开启保存历史时，重置会永久删除已保存的统计。命令行中加 `--yes`。
 
 ## 许可证
 
-[MIT 许可证](LICENSE)。第三方数据文件遵循其各自的许可协议。
+[MIT 许可证](LICENSE)。第三方数据文件遵循各自的许可证。

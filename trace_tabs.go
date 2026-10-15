@@ -113,6 +113,11 @@ func (a *app) addTraceTabEmpty() *traceTab {
 
 func (a *app) activeTrace() *traceTab {
 	if len(a.traceTabs) == 0 {
+		if a.remote != nil { // drawing must not create tabs on the server
+			t := a.newTraceTab()
+			a.traceTabs, a.traceActive = []*traceTab{t}, 0
+			return t
+		}
 		return a.addTraceTabEmpty()
 	}
 	if a.traceActive < 0 || a.traceActive >= len(a.traceTabs) {

@@ -124,9 +124,14 @@ func trayMenu(a *app, ro bool, quit func()) *mygo.Menu {
 	})
 }
 
+// showMainWindow brings the main window back: from the tray, minimized
+// or behind other windows (tray menu, second launch).
 func (a *app) showMainWindow() {
 	if a.win != nil {
 		a.win.Show()
+		if a.win.IsMinimized() {
+			a.win.Restore()
+		}
 		a.win.Focus()
 	}
 }

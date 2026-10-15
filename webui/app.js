@@ -26,7 +26,7 @@
   const W = el => { el.classList.add('w'); return el; };
 
   // ---------- i18n ----------
-  let STR = {}, LANGS = [], LANG = '';
+  let STR = {}, LANGS = [], LANG = '', DEFAULT_LANG = '';
   function T(key, ...args) {
     let s = STR[key];
     if (s == null) return key;
@@ -40,7 +40,7 @@
     const want = localStorage.getItem('ht.lang') || '';
     const r = await fetch('/api/i18n' + (want ? ('?lang=' + encodeURIComponent(want)) : ''), { cache: 'no-store' });
     const j = await r.json();
-    STR = j.strings || {}; LANGS = j.langs || []; LANG = j.lang;
+    STR = j.strings || {}; LANGS = j.langs || []; LANG = j.lang; DEFAULT_LANG = j.default || j.lang;
     document.documentElement.lang = LANG;
     document.querySelectorAll('[data-t]').forEach(e => { e.textContent = T(e.dataset.t); });
   }
@@ -1261,29 +1261,35 @@
 
   // ---------- Settings page ----------
   function settingsPage(root) {
+    // 「我的语言」 (this browser, localStorage) and 「默认语言」 (config,
+    // admin only). Effective language: the browser's own, else the default.
+    let defLang = null;
     function langCard() {
-      const lang = H('select', null, ...LANGS.map(l => H('option', { value: l.code, text: l.name })));
-      lang.value = LANG;
-      const browserOnly = H('input', { type: 'checkbox' });
-      browserOnly.checked = !!localStorage.getItem('ht.lang') || GUEST;
-      if (GUEST) browserOnly.disabled = true;
-      lang.onchange = async () => {
-        if (GUEST || browserOnly.checked) {
-          localStorage.setItem('ht.lang', lang.value);
+      const langName = c => (LANGS.find(l => l.code === c) || { name: c || '' }).name;
+      const mine = H('select');
+      const fill = () => {
+        mine.replaceChildren(H('option', { value: '', text: T('settings.language_follow', langName(DEFAULT_LANG)) }),
+          ...LANGS.map(l => H('option', { value: l.code, text: l.name })));
+        mine.value = localStorage.getItem('ht.lang') || '';
+      };
+      fill();
+      mine.onchange = async () => {
+        if (mine.value) localStorage.setItem('ht.lang', mine.value); else localStorage.removeItem('ht.lang');
+        await loadI18n(); mount();
+      };
+      const kids = [H('label', { text: T('settings.language_mine') }),
+        H('div', { class: 'field' }, mine, H('div', { class: 'hint', text: T('settings.language_browser') }))];
+      if (!GUEST) {
+        defLang = H('select', null, ...LANGS.map(l => H('option', { value: l.code, text: l.name })));
+        defLang.value = DEFAULT_LANG;
+        defLang.onchange = async () => {
+          await api('settings/language', { code: defLang.value });
+          DEFAULT_LANG = defLang.value;
           await loadI18n(); mount();
-          return;
-        }
-        localStorage.removeItem('ht.lang');
-        await api('settings/language', { code: lang.value }); await loadI18n(); mount();
-      };
-      browserOnly.onchange = () => {
-        if (browserOnly.checked) localStorage.setItem('ht.lang', lang.value);
-        else localStorage.removeItem('ht.lang');
-      };
-      const field = H('div', { class: 'field' }, lang,
-        H('div', { class: 'hint', text: T(GUEST ? 'settings.language_browser' : 'settings.language_desc') }));
-      if (!GUEST) field.append(H('label', { class: 'row' }, browserOnly, T('settings.language_browser_only')));
-      const kids = [H('label', { text: T('settings.language') }), field];
+        };
+        kids.push(H('label', { text: T('settings.language_default') }),
+          H('div', { class: 'field' }, defLang, H('div', { class: 'hint', text: T('settings.language_default_desc') })));
+      }
       return H('section', { class: 'card' }, H('h3', { text: T('settings.appearance') }), H('div', { class: 'form' }, ...kids));
     }
     if (GUEST) {
@@ -1410,6 +1416,7 @@
       update(st) {
         const s = st.settings;
         sync(theme, s.theme, 'theme');
+        if (defLang && st.lang) sync(defLang, st.lang, 'deflang');
         sync(guestBox, !!st.web.guest, 'guest');
         guestBox.disabled = !st.web.hasPassword;
         guestHint.textContent = st.web.hasPassword ? T('web.guest.desc') : T('web.guest.need_password');
@@ -1443,10 +1450,17 @@
           p.children[1].firstChild.style.width = w + '%';
         });
         const w = st.web;
+        // the running listener first (a startup option may override the
+        // saved address), the saved one only when it differs
+        const listenInfo = w => {
+          const saved = (w.host.includes(':') ? '[' + w.host + ']' : w.host) + ':' + w.port;
+          const cur = w.listen || saved;
+          return H('div', null, H('div', { text: cur }), cur !== saved ? H('div', { class: 'hint', text: T('web.listen.saved_differs', saved) }) : null);
+        };
         const sig = JSON.stringify(w);
         if (webInfo._v !== sig) {
           webInfo._v = sig;
-          webInfo.replaceChildren(H('div', { text: T('web.listen.title') }), H('div', { text: w.host + ':' + w.port }),
+          webInfo.replaceChildren(H('div', { text: T('web.listen.title') }), listenInfo(w),
             H('div', { text: T('web.pw.title') }), H('div', { text: T(w.hasPassword ? 'web.pw.set' : 'web.pw.none') }),
             H('div', { text: T('web.mode') }), H('div', { text: T(w.headless ? 'web.mode.headless' : 'web.mode.desktop') }));
         }

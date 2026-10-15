@@ -37,9 +37,7 @@ func (a *app) startRemoteFromConfig() bool {
 
 // enterRemote stops the local engines and switches every page to rc.
 func (a *app) enterRemote(rc *remoteClient) {
-	a.pingMgr.Stop()
-	a.httpMgr.Stop()
-	a.stopAllTraces()
+	a.stopLocalEngines() // never the previous remote server's monitoring
 	if a.web.srv.Status().Running {
 		a.stopWeb()
 	}
@@ -263,4 +261,46 @@ func (a *app) resetRemoteMirror() {
 		a.lookupRows = nil
 		a.lookupMu.Unlock()
 	}
+}
+
+// stopLocalEngines stops this computer's Ping, HTTP and traceroute
+// engines. In remote mode the pages show the server's engines: those are
+// left alone (only an explicit Stop click stops them).
+func (a *app) stopLocalEngines() {
+	if a.pingLocal != nil {
+		a.pingLocal.Stop()
+	}
+	if a.httpMgr != nil {
+		a.httpMgr.Stop()
+	}
+	tabs := a.traceTabs
+	if a.remote != nil {
+		tabs = a.rmir.savedTabs // the local tabs kept aside
+	}
+	for _, t := range tabs {
+		if t != nil && t.session != nil {
+			t.session.Stop()
+			t.setRunning(false)
+		}
+	}
+}
+
+// dropRemote closes the connection to a remote WebUI (SSE, polling,
+// queue) without sending anything to it.
+func (a *app) dropRemote() {
+	if a.remote != nil {
+		a.remote.Stop()
+	}
+}
+
+// quitCleanup releases this client's resources when the app quits. Only
+// this computer's engines stop: a remote server keeps monitoring.
+func (a *app) quitCleanup() {
+	a.stopLocalEngines()
+	a.dropRemote()
+	if a.hist != nil {
+		a.hist.Close()
+	}
+	a.flushLayouts()
+	safeGo("web.quit", a.stopWeb)
 }

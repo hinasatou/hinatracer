@@ -166,8 +166,11 @@
         "settings.appearance": "外观",
         "settings.language": "语言",
         "settings.language_desc": "内置与自定义语言包。切换后立即生效。",
-        "settings.language_browser": "此浏览器的界面语言（仅保存在本机，不修改服务器）。",
-        "settings.language_browser_only": "仅此浏览器（不写入配置）",
+        "settings.language_browser": "只保存在此浏览器，访客也可以设置；选「跟随默认」则使用默认语言。",
+        "settings.language_mine": "我的语言",
+        "settings.language_follow": "跟随默认（{0}）",
+        "settings.language_default": "默认语言",
+        "settings.language_default_desc": "写入配置文件，没有单独设置语言的浏览器和桌面程序都使用它。",
         "settings.theme": "主题",
         "settings.theme_desc": "浅色、深色或跟随系统。立即生效。",
         "settings.theme.light": "浅色",
@@ -602,6 +605,8 @@
         "web.mcp.url": "MCP 地址：",
         "web.mcp.stopped": "启动 WebUI 后可用",
         "web.cli.client": "命令行客户端（控制正在运行的 HinaTracer）：",
-        "web.listen.next_start": "已保存，下次启动 WebUI 时生效"
+        "web.listen.next_start": "已保存，下次启动 WebUI 时生效",
+        "web.listen.active_differs": "当前正在监听 {0}（与已保存的设置 {1} 不同，例如由启动参数指定）",
+        "web.listen.saved_differs": "已保存的设置：{0}（下次启动时使用）"
     }
 }

@@ -166,8 +166,11 @@
         "settings.appearance": "Appearance",
         "settings.language": "Language",
         "settings.language_desc": "Built-in and custom language packs. Changes apply immediately.",
-        "settings.language_browser": "UI language for this browser only (stored locally; never writes the server config).",
-        "settings.language_browser_only": "This browser only (do not write config)",
+        "settings.language_browser": "Stored in this browser only; guests can set it too. Choose Follow default to use the default language.",
+        "settings.language_mine": "My language",
+        "settings.language_follow": "Follow default ({0})",
+        "settings.language_default": "Default language",
+        "settings.language_default_desc": "Saved in the config file; used by the desktop app and by every browser without its own language.",
         "settings.theme": "Theme",
         "settings.theme_desc": "Light, dark, or follow the system appearance. Applies immediately.",
         "settings.theme.light": "Light",
@@ -602,6 +605,8 @@
         "web.mcp.url": "MCP address:",
         "web.mcp.stopped": "Available once the WebUI is running",
         "web.cli.client": "Command-line client (controls the running HinaTracer):",
-        "web.listen.next_start": "Saved; used the next time the WebUI starts"
+        "web.listen.next_start": "Saved; used the next time the WebUI starts",
+        "web.listen.active_differs": "Currently listening on {0} (differs from the saved setting {1}, e.g. set by a startup option)",
+        "web.listen.saved_differs": "Saved setting: {0} (used at the next start)"
     }
 }
