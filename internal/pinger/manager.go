@@ -225,7 +225,10 @@ func (m *Manager) Start() {
 	m.cancel = cancel
 	m.running = true
 	m.mu.Unlock()
-	go m.loop(ctx)
+	go func() {
+		defer crashlog.Recover("pinger.loop")
+		m.loop(ctx)
+	}()
 }
 
 // Stop stops the ping loop.
@@ -251,20 +254,26 @@ func (m *Manager) Running() bool {
 	return m.running
 }
 
+// loop pings every interval. A panic in a pass is written to the crash
+// log and the loop goes on (after a growing extra wait if it repeats).
 func (m *Manager) loop(ctx context.Context) {
+	var backoff crashlog.Backoff
 	for {
-		m.pingAll()
-		m.mu.Lock()
-		d := m.interval
-		fn := m.onUpdate
-		m.mu.Unlock()
-		if fn != nil {
-			fn()
-		}
+		d := time.Second
+		rec := crashlog.Pass("pinger.loop", func() {
+			m.pingAll()
+			m.mu.Lock()
+			d = m.interval
+			fn := m.onUpdate
+			m.mu.Unlock()
+			if fn != nil {
+				fn()
+			}
+		})
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(d):
+		case <-time.After(d + backoff.After(rec)):
 		}
 	}
 }
@@ -284,7 +293,7 @@ func (m *Manager) pingAll() {
 		go func(t *Target) {
 			defer wg.Done()
 			defer func() {
-				if rec := crashlog.Recover("pinger.ping"); rec != nil {
+				if rec := crashlog.Logged("pinger.ping", recover()); rec != nil {
 					now := time.Now()
 					m.mu.Lock()
 					defer m.mu.Unlock()

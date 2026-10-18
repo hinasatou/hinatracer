@@ -66,7 +66,10 @@ func (a *app) noteLayout(name string, l ui.TableLayout) {
 	a.layoutMu.Lock()
 	a.layoutPending = snapshot
 	if a.layoutTimer == nil {
-		a.layoutTimer = time.AfterFunc(layoutSaveDelay, a.flushLayouts)
+		a.layoutTimer = time.AfterFunc(layoutSaveDelay, func() {
+			defer recoverAndLog("layout.save", false)
+			a.flushLayouts()
+		})
 	} else {
 		a.layoutTimer.Reset(layoutSaveDelay)
 	}

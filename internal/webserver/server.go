@@ -3,6 +3,8 @@ package webserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"hinatracer/internal/crashlog"
 	"net"
 	"net/http"
 	"sync"
@@ -56,7 +58,7 @@ func (s *Server) Start(host string, port int, hasPassword bool, h http.Handler) 
 	base, cancel := context.WithCancel(context.Background())
 	srv := &http.Server{
 		BaseContext:       func(net.Listener) context.Context { return base },
-		Handler:           h,
+		Handler:           recoverHandler(h),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    64 << 10,
@@ -68,6 +70,18 @@ func (s *Server) Start(host string, port int, hasPassword bool, h http.Handler) 
 	s.srv, s.stop, s.host, s.port, s.err = srv, cancel, host, port, ""
 	s.mu.Unlock()
 	go func() {
+		defer func() {
+			if rec := crashlog.Logged("webserver.serve", recover()); rec != nil {
+				s.mu.Lock()
+				if s.srv == srv {
+					s.srv = nil
+					s.err = fmt.Sprintf("internal error: %v", rec)
+				}
+				s.mu.Unlock()
+				cancel()
+				_ = ln.Close()
+			}
+		}()
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.mu.Lock()
 			if s.srv == srv {
@@ -112,4 +126,23 @@ func (s *Server) Status() Status {
 		st.URL = BrowseURL(s.host, s.port)
 	}
 	return st
+}
+
+// recoverHandler writes a panic in a request handler to the crash log and
+// then re-panics, so net/http handles it as before (it logs the panic and
+// drops that one connection; the server keeps serving).
+// http.ErrAbortHandler is the deliberate way to abort a response and is
+// not logged.
+func recoverHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				if rec != http.ErrAbortHandler {
+					crashlog.Logged("web "+r.Method+" "+r.URL.Path, rec)
+				}
+				panic(rec)
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
 }

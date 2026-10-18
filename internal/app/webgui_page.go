@@ -35,13 +35,13 @@ func (a *app) viewWebUI(c *ui.Context) {
 						ui.Text(c, i18n.T("web.url")).FontSize(13)
 						link := ui.Text(c, url).FontSize(13).TextColor(t.Accent)
 						if link.Clicked() {
-							go mygoShellOpen(url)
+							safeGo("shell.open", func() { mygoShellOpen(url) })
 						}
 						if ui.Button(c, i18n.T("web.copy")).Clicked() {
 							copyText(url)
 						}
 						if ui.Button(c, i18n.T("web.open")).Clicked() {
-							go mygoShellOpen(url)
+							safeGo("shell.open", func() { mygoShellOpen(url) })
 						}
 					})
 					for _, u := range a.web.lanURLs {

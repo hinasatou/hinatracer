@@ -31,7 +31,7 @@ func IsTTLExpired(err error) bool {
 
 func ping(host string, ttl int, timeout time.Duration) (r Result) {
 	defer func() {
-		if rec := crashlog.Recover("icmpx.ping"); rec != nil {
+		if rec := crashlog.Logged("icmpx.ping", recover()); rec != nil {
 			r = Result{Timeout: true, Err: fmt.Errorf("icmpx: panic: %v", rec)}
 		}
 	}()

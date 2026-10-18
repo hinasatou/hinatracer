@@ -45,7 +45,10 @@ func makeQuit(cleanup, quit, hardExit func()) func() {
 		if appQuitting.Swap(true) {
 			return
 		}
-		time.AfterFunc(quitHardTimeout, hardExit)
+		time.AfterFunc(quitHardTimeout, func() {
+			defer recoverAndLog("quit.hard", false)
+			hardExit()
+		})
 		destroyTray()
 		cleanup()
 		quit()

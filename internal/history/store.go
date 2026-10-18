@@ -16,6 +16,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"hinatracer/internal/crashlog"
 	"hinatracer/internal/txtalign"
 )
 
@@ -103,7 +104,11 @@ func Open(path string, enabled bool, retainDays int) (*Store, error) {
 	}
 	s.loadTotalsLocked()
 	s.done.Add(1)
-	go s.loop()
+	go func() {
+		defer s.done.Done() // Close must never wait for ever
+		defer crashlog.Recover("history.loop")
+		s.loop()
+	}()
 	return s, nil
 }
 
@@ -306,30 +311,54 @@ func (s *Store) AddCode(key string, at time.Time, ms float64, code int) {
 	}
 }
 
+// loop writes the buffered samples every flushEvery and rolls them up every
+// 30 minutes. A panic in a pass is written to the crash log and shown as
+// the store's error (LastErr); its transaction is rolled back, the
+// samples stay buffered and the next pass retries them, after a growing
+// wait when the panics repeat.
 func (s *Store) loop() {
-	defer s.done.Done()
 	tick := time.NewTicker(flushEvery)
 	defer tick.Stop()
 	retain := time.NewTicker(30 * time.Minute)
 	defer retain.Stop()
+	var backoff crashlog.Backoff
+	var resume time.Time // skip passes until then after a panic
 	for {
+		var pass func()
 		select {
 		case <-s.stop:
-			s.mu.Lock()
-			s.flushLocked()
-			s.mu.Unlock()
+			s.lockedPass("history.flush", s.flushLocked)
 			return
 		case <-tick.C:
-			s.mu.Lock()
-			s.flushLocked()
-			s.mu.Unlock()
+			pass = s.flushLocked
 		case <-retain.C:
-			s.mu.Lock()
-			s.maintainLocked()
-			s.mu.Unlock()
+			pass = s.maintainLocked
 		}
+		if time.Now().Before(resume) {
+			continue
+		}
+		resume = time.Now().Add(backoff.After(s.lockedPass("history.loop", pass)))
 	}
 }
+
+// lockedPass runs fn under s.mu (released by defer) and returns a
+// recovered panic, which it also records as the store's error.
+func (s *Store) lockedPass(where string, fn func()) any {
+	return crashlog.Pass(where, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		defer func() {
+			if rec := recover(); rec != nil {
+				s.lastErr = fmt.Sprintf("internal error: %v", rec)
+				panic(rec) // logged and stopped by crashlog.Pass
+			}
+		}()
+		fn()
+	})
+}
+
+// beforeCommit runs inside the flush transaction (tests).
+var beforeCommit func()
 
 func (s *Store) flushLocked() {
 	s.flushTotalsLocked()
@@ -342,6 +371,7 @@ func (s *Store) flushLocked() {
 		s.lastErr = err.Error()
 		return
 	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit; frees the connection after a panic
 	st, err := tx.Prepare(`INSERT INTO samples(key,ts,ms,code) VALUES(?,?,?,?)`)
 	if err != nil {
 		_ = tx.Rollback()
@@ -357,6 +387,9 @@ func (s *Store) flushLocked() {
 		}
 	}
 	_ = st.Close()
+	if beforeCommit != nil {
+		beforeCommit()
+	}
 	if err := tx.Commit(); err != nil {
 		s.lastErr = err.Error()
 		return
@@ -378,6 +411,7 @@ func (s *Store) maintainLocked() {
 		s.lastErr = err.Error()
 		return
 	}
+	defer rows.Close() // also after a panic (the store has one connection)
 	type acc struct {
 		n, lost       int
 		sum, min, max float64
@@ -415,6 +449,7 @@ func (s *Store) maintainLocked() {
 	if err != nil {
 		return
 	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit; frees the connection after a panic
 	st, _ := tx.Prepare(`INSERT INTO rollups(key,kind,ts,n,lost,sum,min,max) VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(key,kind,ts) DO UPDATE SET
 			n=n+excluded.n, lost=lost+excluded.lost, sum=sum+excluded.sum,
@@ -452,6 +487,7 @@ func (s *Store) rollupKindLocked(from, to string, olderThan, bucketMs int64) {
 	if err != nil {
 		return
 	}
+	defer rows.Close() // also after a panic (the store has one connection)
 	type acc struct {
 		n, lost       int
 		sum, min, max float64
@@ -487,6 +523,7 @@ func (s *Store) rollupKindLocked(from, to string, olderThan, bucketMs int64) {
 	if err != nil {
 		return
 	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit; frees the connection after a panic
 	st, _ := tx.Prepare(`INSERT INTO rollups(key,kind,ts,n,lost,sum,min,max) VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(key,kind,ts) DO UPDATE SET
 			n=n+excluded.n, lost=lost+excluded.lost, sum=sum+excluded.sum,
@@ -630,6 +667,7 @@ func (s *Store) queryDB(key string, r Range, limit int) []Point {
 		if err != nil {
 			return nil
 		}
+		defer rows.Close() // also after a panic
 		// Better: fetch as Points then re-bucket
 		var pts []Point
 		for rows.Next() {
@@ -657,6 +695,7 @@ func (s *Store) queryDB(key string, r Range, limit int) []Point {
 		rows, err := db.Query(`SELECT ts,n,lost,sum,min,max FROM rollups WHERE key=? AND kind='minute' ORDER BY ts`, key)
 		var pts []Point
 		if err == nil {
+			defer rows.Close() // also after a panic
 			for rows.Next() {
 				var ts int64
 				var n, lost int
@@ -679,6 +718,7 @@ func (s *Store) queryDB(key string, r Range, limit int) []Point {
 		raw, _ := db.Query(`SELECT ts,ms FROM samples WHERE key=? ORDER BY ts`, key)
 		var sm []Sample
 		if raw != nil {
+			defer raw.Close() // also after a panic
 			for raw.Next() {
 				var ts int64
 				var ms float64

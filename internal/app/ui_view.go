@@ -1376,11 +1376,11 @@ func (a *app) viewLocalOnlySettings(c *ui.Context) {
 				a.saveSettings()
 			}
 			if ui.Button(c, i18n.T("settings.reload")).Clicked() {
-				go func() {
+				safeGo("db.reload", func() {
 					a.reloadDBs()
 					a.refreshAllHostMeta()
 					a.requestUIUpdate()
-				}()
+				})
 			}
 		})
 		if _, dbStat := a.getDBStatus(); dbStat != "" {
@@ -1449,19 +1449,19 @@ func (a *app) viewLocalOnlySettings(c *ui.Context) {
 			ui.Text(c, "  https://cdn.bili33.top/gh/nmgliangwei/qqwry.ipdb@main/qqwry.ipdb").FontSize(12).TextColor(t.TextMuted)
 			ui.Text(c, "  https://cdn.jsdelivr.net/npm/qqwry.ipdb/qqwry.ipdb").FontSize(12).TextColor(t.TextMuted)
 			if ui.Button(c, i18n.T("settings.dl.open_ipdb")).Clicked() {
-				go mygoShellOpen("https://github.com/nmgliangwei/qqwry.ipdb")
+				safeGo("shell.open", func() { mygoShellOpen("https://github.com/nmgliangwei/qqwry.ipdb") })
 			}
 			ui.Text(c, i18n.T("settings.dl.geoip")).FontSize(13)
 			ui.Text(c, "  https://github.com/Loyalsoldier/geoip/releases").FontSize(12).TextColor(t.Accent)
 			ui.Text(c, "  https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/Country.mmdb").FontSize(12).TextColor(t.TextMuted)
 			if ui.Button(c, i18n.T("settings.dl.open_geoip")).Clicked() {
-				go mygoShellOpen("https://github.com/Loyalsoldier/geoip/releases")
+				safeGo("shell.open", func() { mygoShellOpen("https://github.com/Loyalsoldier/geoip/releases") })
 			}
 			ui.Text(c, i18n.T("settings.dl.asn")).FontSize(13)
 			ui.Text(c, "  https://iptoasn.com/data/ip2asn-combined.tsv.gz").FontSize(12).TextColor(t.Accent)
 			ui.Text(c, "  https://iptoasn.com/").FontSize(12).TextColor(t.TextMuted)
 			if ui.Button(c, i18n.T("settings.dl.open_asn")).Clicked() {
-				go mygoShellOpen("https://iptoasn.com/")
+				safeGo("shell.open", func() { mygoShellOpen("https://iptoasn.com/") })
 			}
 		})
 	})
@@ -1492,11 +1492,11 @@ func (a *app) viewAbout(c *ui.Context) {
 			ui.Text(c, i18n.T("about.homepage")).FontSize(13)
 			link := ui.Text(c, appRepoURL).FontSize(13).TextColor(t.Accent)
 			if link.Clicked() {
-				go mygoShellOpen(appRepoURL)
+				safeGo("shell.open", func() { mygoShellOpen(appRepoURL) })
 			}
 		})
 		if ui.Button(c, i18n.T("about.open_github")).Clicked() {
-			go mygoShellOpen(appRepoURL)
+			safeGo("shell.open", func() { mygoShellOpen(appRepoURL) })
 		}
 	})
 }

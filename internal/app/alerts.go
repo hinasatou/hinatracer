@@ -195,7 +195,7 @@ func (a *app) startAlerts() {
 		t := time.NewTicker(alertsDelay)
 		defer t.Stop()
 		for range t.C {
-			a.alertTick(time.Now())
+			safeStep("alerts", func() { a.alertTick(time.Now()) })
 		}
 	})
 }

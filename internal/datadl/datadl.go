@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"hinatracer/internal/asn"
+	"hinatracer/internal/crashlog"
 	"hinatracer/internal/geoip"
 	"hinatracer/internal/ipdb"
 )
@@ -148,14 +149,16 @@ func (m *Manager) fire() {
 }
 
 func (m *Manager) setProg(k Kind, mut func(*Progress)) {
-	m.mu.Lock()
-	p := m.progress[k]
-	if p == nil {
-		p = &Progress{Kind: k}
-		m.progress[k] = p
-	}
-	mut(p)
-	m.mu.Unlock()
+	func() {
+		m.mu.Lock()
+		defer m.mu.Unlock() // also after a panic
+		p := m.progress[k]
+		if p == nil {
+			p = &Progress{Kind: k}
+			m.progress[k] = p
+		}
+		mut(p)
+	}()
 	m.fire()
 }
 
@@ -192,13 +195,27 @@ func (m *Manager) Start(parent context.Context, configDir string, specs []FileSp
 	go func() {
 		defer m.running.Store(false)
 		defer cancel()
+		defer crashlog.Recover("datadl.run")
 		results := make([]Result, len(specs))
 		var wg sync.WaitGroup
 		for i, s := range specs {
 			wg.Add(1)
 			go func(i int, s FileSpec) {
 				defer wg.Done()
-				path := ResolveTargetPath(configDir, s.ConfigPath, s.Filename)
+				var path string
+				// A panic fails this file only; the others go on.
+				defer func() {
+					if rec := crashlog.Logged("datadl.file", recover()); rec != nil {
+						err := fmt.Errorf("internal error: %v", rec)
+						results[i] = Result{Kind: s.Kind, Path: path, Err: err}
+						m.setProg(s.Kind, func(p *Progress) {
+							p.State = "error"
+							p.Err = err.Error()
+							p.Done = true
+						})
+					}
+				}()
+				path = ResolveTargetPath(configDir, s.ConfigPath, s.Filename)
 				filled := strings.TrimSpace(s.ConfigPath) == ""
 				m.setProg(s.Kind, func(p *Progress) {
 					p.State = "running"

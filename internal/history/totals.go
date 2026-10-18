@@ -149,6 +149,7 @@ func (s *Store) flushTotalsLocked() {
 		s.lastErr = err.Error()
 		return
 	}
+	defer func() { _ = tx.Rollback() }() // no-op after Commit; frees the connection after a panic
 	for k := range s.dirty {
 		t := s.totals[k]
 		if t == nil {

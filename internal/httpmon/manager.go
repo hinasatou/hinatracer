@@ -2,9 +2,11 @@ package httpmon
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
+	"hinatracer/internal/crashlog"
 	"hinatracer/internal/pinger"
 )
 
@@ -250,7 +252,10 @@ func (m *Manager) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.running, m.cancel = true, cancel
 	m.mu.Unlock()
-	go m.loop(ctx)
+	go func() {
+		defer crashlog.Recover("httpmon.loop")
+		m.loop(ctx)
+	}()
 }
 
 // Stop stops checking.
@@ -278,12 +283,16 @@ func (m *Manager) poke() {
 	}
 }
 
+// loop schedules the checks. A panic in a scheduling pass is written to
+// the crash log and the loop goes on (after a growing extra wait if it
+// repeats); a panic in a check counts as a failed check.
 func (m *Manager) loop(ctx context.Context) {
 	next := map[int]time.Time{}
 	busy := map[int]bool{}
 	done := make(chan int, 64)
 	tick := time.NewTimer(0)
 	defer tick.Stop()
+	var backoff crashlog.Backoff
 	for {
 		select {
 		case <-ctx.Done():
@@ -293,61 +302,67 @@ func (m *Manager) loop(ctx context.Context) {
 		case <-m.wake:
 		case <-tick.C:
 		}
-		now := time.Now()
-		m.mu.Lock()
-		check := m.check
-		soonest := now.Add(time.Second)
-		for _, t := range m.targets {
-			if !t.Enabled || busy[t.ID] {
-				continue
-			}
-			at, ok := next[t.ID]
-			if ok && now.Before(at) {
-				if at.Before(soonest) {
-					soonest = at
-				}
-				continue
-			}
-			busy[t.ID] = true
-			next[t.ID] = now.Add(time.Duration(t.Spec.Interval * float64(time.Second)))
-			id, spec := t.ID, t.Spec
-			go func() {
-				r := check(ctx, spec)
-				m.record(id, spec, r)
-				select {
-				case done <- id:
-				case <-ctx.Done():
-				}
-			}()
-		}
-		m.mu.Unlock()
+		soonest := time.Now().Add(time.Second)
+		rec := crashlog.Pass("httpmon.loop", func() {
+			soonest = m.schedule(ctx, next, busy, done)
+		})
 		if !tick.Stop() {
 			select {
 			case <-tick.C:
 			default:
 			}
 		}
-		tick.Reset(max(10*time.Millisecond, time.Until(soonest)))
+		tick.Reset(max(10*time.Millisecond, time.Until(soonest)) + backoff.After(rec))
 	}
 }
 
-func (m *Manager) record(id int, spec Spec, r Result) {
+// schedule starts the checks that are due and returns when the next one is.
+func (m *Manager) schedule(ctx context.Context, next map[int]time.Time, busy map[int]bool, done chan<- int) time.Time {
+	now := time.Now()
 	m.mu.Lock()
-	t := m.find(id)
-	if t == nil || !m.running || t.Spec.URL != spec.URL {
-		m.mu.Unlock()
+	defer m.mu.Unlock()
+	check := m.check
+	soonest := now.Add(time.Second)
+	for _, t := range m.targets {
+		if !t.Enabled || busy[t.ID] {
+			continue
+		}
+		at, ok := next[t.ID]
+		if ok && now.Before(at) {
+			if at.Before(soonest) {
+				soonest = at
+			}
+			continue
+		}
+		busy[t.ID] = true
+		next[t.ID] = now.Add(time.Duration(t.Spec.Interval * float64(time.Second)))
+		id, spec := t.ID, t.Spec
+		go func() {
+			// Always hand the target back, so it is checked again.
+			defer func() {
+				select {
+				case done <- id:
+				case <-ctx.Done():
+				}
+			}()
+			defer func() {
+				if rec := crashlog.Logged("httpmon.check", recover()); rec != nil {
+					failed := Result{At: time.Now(), Err: fmt.Sprintf("internal error: %v", rec), CertDays: -1}
+					crashlog.Pass("httpmon.record", func() { m.record(id, spec, failed) })
+				}
+			}()
+			r := check(ctx, spec)
+			m.record(id, spec, r)
+		}()
+	}
+	return soonest
+}
+
+func (m *Manager) record(id int, spec Spec, r Result) {
+	snap, onS, onU, ok := m.recordLocked(id, spec, r)
+	if !ok {
 		return
 	}
-	if r.OK {
-		t.Stats.AddSuccess(r.Ms, r.At)
-	} else {
-		t.Stats.AddFailure(r.At)
-	}
-	t.Last = r
-	t.Checks++
-	snap := Snapshot{ID: t.ID, Alias: t.Alias, Spec: t.Spec, Enabled: t.Enabled, Last: r}
-	onS, onU := m.onSample, m.onUpdate
-	m.mu.Unlock()
 	if onS != nil {
 		onS(snap, r)
 	}
@@ -377,4 +392,25 @@ func (m *Manager) EditStats(id int, f func(*pinger.Stats)) bool {
 		}
 	}
 	return true
+}
+
+// recordLocked adds r to the target's stats under the lock (released by
+// defer, so a panic cannot leave it held). ok is false when the target is
+// gone, stopped or changed meanwhile.
+func (m *Manager) recordLocked(id int, spec Spec, r Result) (snap Snapshot, onS func(Snapshot, Result), onU func(), ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t := m.find(id)
+	if t == nil || !m.running || t.Spec.URL != spec.URL {
+		return snap, nil, nil, false
+	}
+	if r.OK {
+		t.Stats.AddSuccess(r.Ms, r.At)
+	} else {
+		t.Stats.AddFailure(r.At)
+	}
+	t.Last = r
+	t.Checks++
+	snap = Snapshot{ID: t.ID, Alias: t.Alias, Spec: t.Spec, Enabled: t.Enabled, Last: r}
+	return snap, m.onSample, m.onUpdate, true
 }

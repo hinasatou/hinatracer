@@ -377,7 +377,7 @@ func (a *app) startUpdateThrottle() {
 			case <-stop:
 				return
 			case <-t.C:
-				a.flushUIUpdate()
+				safeStep("ui.throttle", a.flushUIUpdate)
 			}
 		}
 	}()
@@ -862,7 +862,7 @@ func (a *app) applyInterval() {
 
 func (a *app) pickFile(title string, exts []string, set *string) {
 	w := a.win
-	go func() {
+	safeGo("settings.pickFile", func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Parent:  w,
 			Title:   title,
@@ -876,7 +876,7 @@ func (a *app) pickFile(title string, exts []string, set *string) {
 				*set = paths[0]
 			})
 		}
-	}()
+	})
 }
 
 func (a *app) saveSettings() {
@@ -884,11 +884,11 @@ func (a *app) saveSettings() {
 	a.cfg.GeoIPPath = strings.TrimSpace(a.draftGeoIP)
 	a.cfg.ASNPath = strings.TrimSpace(a.draftASN)
 	a.persist() // before reloading: reloadDBs reads the paths from the store
-	go func() {
+	safeGo("db.reload", func() {
 		a.reloadDBs()
 		a.refreshAllHostMeta()
 		a.requestUIUpdate()
-	}()
+	})
 }
 
 func (a *app) applyLanguage(name string) {
@@ -902,11 +902,11 @@ func (a *app) applyLanguage(name string) {
 	a.cfg.Language = i18n.Language()
 	a.themeName = themeDisplayName(a.cfg.Theme)
 	a.persist()
-	go func() {
+	safeGo("db.reload", func() {
 		a.reloadDBs()
 		a.refreshAllHostMeta()
 		a.requestUIUpdate()
-	}()
+	})
 }
 
 func (a *app) applyTheme(name string) {
@@ -1183,7 +1183,7 @@ func (a *app) lookupPingRDNS(force bool, hosts ...string) {
 		a.pingRDNSMu.Unlock()
 		h := host
 		k := key
-		go a.resolvePingRDNS(h, k)
+		safeGo("ping.rdns", func() { a.resolvePingRDNS(h, k) }) // a panic leaves "…", retried on the next refresh
 	}
 }
 
@@ -1362,7 +1362,7 @@ func (a *app) ensureHostMeta(hosts ...string) {
 		}
 		a.hostMetaMu.Unlock()
 		h, k := host, key
-		go a.resolveHostMeta(h, k)
+		safeGo("host.meta", func() { a.resolveHostMeta(h, k) }) // not Ready after a panic: retried on the next refresh
 	}
 }
 

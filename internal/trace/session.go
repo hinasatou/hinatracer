@@ -113,7 +113,10 @@ func (s *Session) Start(host string, opt SessionOptions) {
 	s.maxTTL = 0
 	s.dest = nil
 	s.mu.Unlock()
-	go s.run(ctx, host, opt)
+	go func() {
+		defer crashlog.Recover("trace.session")
+		s.run(ctx, host, opt)
+	}()
 }
 
 // Stop cancels the session goroutine.
@@ -175,7 +178,7 @@ func (s *Session) fireUpdate() {
 
 func (s *Session) run(ctx context.Context, host string, opt SessionOptions) {
 	defer func() {
-		if rec := crashlog.Recover("trace.session.run"); rec != nil {
+		if rec := crashlog.Logged("trace.session.run", recover()); rec != nil {
 			s.mu.Lock()
 			s.err = errPanic(rec)
 			s.mu.Unlock()
@@ -241,7 +244,7 @@ func (s *Session) run(ctx context.Context, host string, opt SessionOptions) {
 			go func(ttl int) {
 				defer wg.Done()
 				defer func() {
-					if rec := crashlog.Recover("trace.session.mtr"); rec != nil {
+					if rec := crashlog.Logged("trace.session.mtr", recover()); rec != nil {
 						s.mu.Lock()
 						if s.err == nil {
 							s.err = errPanic(rec)

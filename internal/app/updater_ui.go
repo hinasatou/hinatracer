@@ -249,7 +249,7 @@ func (a *app) openReleasePage(rel update.Release) {
 	if u == "" {
 		u = update.ReleasesPage
 	}
-	go mygoShellOpen(u)
+	safeGo("shell.open", func() { mygoShellOpen(u) })
 }
 
 func updStatusText(s updView) string {

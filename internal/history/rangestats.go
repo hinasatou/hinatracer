@@ -235,6 +235,7 @@ func mixedMedian(db *sql.DB, key string, f, t int64, okRaw int) float64 {
 	var vals []weighted
 	total := 0
 	if rows, err := db.Query(`SELECT n-lost, sum/(n-lost) FROM rollups WHERE key=? AND ts>=? AND ts<? AND n>lost`, key, f, t); err == nil {
+		defer rows.Close() // also after a panic
 		for rows.Next() {
 			var w int
 			var v float64
@@ -251,6 +252,7 @@ func mixedMedian(db *sql.DB, key string, f, t int64, okRaw int) float64 {
 			step = (okRaw + medianFetchCap - 1) / medianFetchCap
 		}
 		if rows, err := db.Query(`SELECT ms FROM samples WHERE key=? AND ts>=? AND ts<? AND ms>=0`, key, f, t); err == nil {
+			defer rows.Close() // also after a panic
 			i := 0
 			for rows.Next() {
 				var v float64

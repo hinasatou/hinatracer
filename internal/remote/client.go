@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"hinatracer/internal/api"
+	"hinatracer/internal/crashlog"
 	"hinatracer/internal/webserver"
 )
 
@@ -53,7 +54,12 @@ type Client struct {
 
 // Go starts the client's background goroutines. The app replaces it with
 // its crash-logging launcher.
-var Go = func(where string, fn func()) { go fn() }
+var Go = func(where string, fn func()) {
+	go func() {
+		defer crashlog.Recover(where)
+		fn()
+	}()
+}
 
 // ErrAuth means the credentials were refused.
 var ErrAuth = errors.New("unauthorized")
@@ -136,22 +142,34 @@ func (c *Client) worker() {
 		case <-c.quit:
 			return
 		case j := <-c.jobs:
-			r, err := c.Post(j.path, j.body)
-			if err == nil && !r.OK && r.Message != "" && r.Status == "" {
-				err = errors.New(r.Message)
-			}
-			if j.done != nil {
-				j.done(r, err)
-			} else if err != nil && c.OnError != nil {
-				c.OnError(err.Error())
-			}
-			c.drainSeq.Store(c.seq.Load())
-			c.drainedAt.Store(time.Now().UnixMilli())
-			c.pending.Add(-1)
-			if c.OnState != nil {
-				c.OnState()
-			}
+			c.runJob(j)
 		}
+	}
+}
+
+// runJob runs one queued action. A panic in it is written to the crash
+// log and reported through OnError; the job still counts as finished, so
+// the queue goes on and Busy does not stay true for ever.
+func (c *Client) runJob(j job) {
+	defer func() {
+		if rec := crashlog.Logged("remote.job", recover()); rec != nil && c.OnError != nil {
+			c.OnError(fmt.Sprintf("internal error: %v", rec))
+		}
+		c.drainSeq.Store(c.seq.Load())
+		c.drainedAt.Store(time.Now().UnixMilli())
+		c.pending.Add(-1)
+		if c.OnState != nil {
+			c.OnState()
+		}
+	}()
+	r, err := c.Post(j.path, j.body)
+	if err == nil && !r.OK && r.Message != "" && r.Status == "" {
+		err = errors.New(r.Message)
+	}
+	if j.done != nil {
+		j.done(r, err)
+	} else if err != nil && c.OnError != nil {
+		c.OnError(err.Error())
 	}
 }
 
@@ -352,7 +370,7 @@ func (c *Client) loop(ctx context.Context) {
 				continue
 			}
 		}
-		err := c.stream(ctx, func() { backoff = time.Second })
+		err := c.safeStream(ctx, func() { backoff = time.Second })
 		if ctx.Err() != nil {
 			return
 		}
@@ -370,6 +388,18 @@ func (c *Client) loop(ctx context.Context) {
 		}
 		backoff = min(backoff*2, 15*time.Second)
 	}
+}
+
+// safeStream runs one stream connection. A panic in it is written to the
+// crash log and handled like a dropped connection (reconnect with
+// backoff), so the state stream does not stop silently.
+func (c *Client) safeStream(ctx context.Context, connected func()) (err error) {
+	defer func() {
+		if rec := crashlog.Logged("remote.stream", recover()); rec != nil {
+			err = fmt.Errorf("internal error: %v", rec)
+		}
+	}()
+	return c.stream(ctx, connected)
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {
