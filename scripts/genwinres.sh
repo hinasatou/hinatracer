@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-VERSION="$(grep -E '^\s*appVersion\s*=' ui_view.go | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+VERSION="$(grep -E '^\s*Version\s*=' internal/version/version.go | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 if ! command -v go-winres >/dev/null 2>&1; then
   go install github.com/tc-hib/go-winres@latest
 fi
