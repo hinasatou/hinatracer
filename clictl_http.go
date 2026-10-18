@@ -91,16 +91,28 @@ func (c *ctl) cmdHTTP() error {
 	sub := c.sub()
 	switch sub {
 	case "", "list", "ls":
+		if c.wantsTableExport() {
+			return c.tableExport("http")
+		}
 		st, err := c.state()
 		if err != nil {
 			return err
 		}
 		failing := c.flags["failing"] == "true"
+		rr, err := c.rangeStats("http", 0)
+		if err != nil {
+			return err
+		}
 		var list []wsHTTP
 		var rows [][]string
 		for _, r := range st.HTTP.Rows {
 			if failing && !r.Failing {
 				continue
+			}
+			lastOK := r.Checks > 0 && r.OK
+			if rr != nil {
+				rangeHTTP(&r, rr.HTTP[r.ID])
+				lastOK = r.Success > 0
 			}
 			r.Hist = nil
 			list = append(list, r)
@@ -119,15 +131,20 @@ func (c *ctl) cmdHTTP() error {
 			}
 			ok := r.Success > 0
 			rows = append(rows, []string{strconv.Itoa(r.ID), r.Spec.URL, dash(r.Alias), state, code,
-				ms(r.Last, r.Checks > 0 && r.OK), ms(r.Avg, ok), ms(r.Median, ok), ms(r.Min, ok), ms(r.Max, ok),
+				ms(r.Last, lastOK), ms(r.Avg, ok), ms(r.Median, ok), ms(r.Min, ok), ms(r.Max, ok),
 				fmt.Sprintf("%.1f%%", r.SuccessRate), fmt.Sprintf("%.1f%%", r.LossRate), strconv.Itoa(r.Failure),
 				dash(r.IP), dash(r.Loc), dash(r.Region), dash(r.ASN), dash(r.ASNRegion)})
 		}
 		if c.json {
-			c.printJSON(map[string]any{"running": st.HTTP.Running, "targets": list})
+			out := map[string]any{"running": st.HTTP.Running, "targets": list}
+			if rr != nil {
+				out["timeRange"] = rangeInfo(rr)
+			}
+			c.printJSON(out)
 			return nil
 		}
 		fmt.Fprintln(c.out, st.HTTP.Status)
+		c.printRange(rr)
 		c.table([]string{"ID", "URL", "ALIAS", "STATE", "CODE", "LAST", "AVG", "MEDIAN", "MIN", "MAX", "OK%", "LOSS%", "FAIL", "IP", "LOCATION", "REGION", "ASN", "ASN REGION"}, rows)
 		return nil
 	case "show":

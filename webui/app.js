@@ -133,7 +133,7 @@
       if (!it) return;
       if (it.sub) {
         const fly = H('div', { class: 'menu sub' });
-        it.sub.forEach(s => fly.append(H('button', { disabled: s.disabled, onclick: () => { closeMenu(); s.run(); } }, s.label)));
+        it.sub.forEach(s => fly.append(s === '-' ? H('hr') : H('button', { disabled: s.disabled, onclick: () => { closeMenu(); s.run(); } }, s.label)));
         const b = H('button', { class: 'has-sub', disabled: it.disabled }, it.label, H('span', { class: 'sub-arrow', text: '›' }));
         const show = () => {
           if (b.disabled) return;
@@ -370,7 +370,7 @@
       if (allChk) allChk.checked = display.length > 0 && display.every(r => sel.has(o.key(r)));
     }
     return {
-      el: wrap, sort, sel,
+      el: wrap, sort, sel, cols: o.cols,
       update(rs) { rows = rs || []; render(); },
       selected: api_selected,
       display: () => display,
@@ -553,13 +553,233 @@
     else q.set('id', ref.id);
     return fetch('/api/history?' + q, { credentials: 'same-origin', cache: 'no-store' }).then(r => r.json());
   }
-  function histCSV(ref, range) {
+  function histURL(ref, range, fmt) {
     const q = new URLSearchParams({ range });
     if (ref.kind === 'hop') { q.set('tab', ref.tab); q.set('ttl', ref.ttl); }
     else if (ref.kind === 'http') q.set('http', ref.id);
     else q.set('id', ref.id);
-    const a = H('a', { href: '/api/history.csv?' + q, download: '' });
+    return '/api/history.' + (fmt === 'txt' || fmt === 'md' ? fmt : 'csv') + '?' + q;
+  }
+  function histCSV(ref, range, fmt) { download(histURL(ref, range, fmt)); }
+  // histExportButton: a detail window's 「导出」 menu (files, then copies)
+  function histExportButton(ref, range) {
+    const items = () => [
+      { label: T('history.export.button'), run: () => histCSV(ref, range(), 'csv') },
+      { label: T('history.export.txt'), run: () => histCSV(ref, range(), 'txt') },
+      { label: T('history.export.md'), run: () => histCSV(ref, range(), 'md') }, '-',
+      { label: T('copy.txt'), run: () => copyFrom(histURL(ref, range(), 'txt')) },
+      { label: T('copy.md'), run: () => copyFrom(histURL(ref, range(), 'md')) },
+    ];
+    return H('button', { class: 'btn', onclick: e => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, items()); } }, T('detail.export') + ' ▾');
+  }
+  // copyFrom puts the text at href (the same TXT as the export) on the
+  // clipboard. Over plain http (no secure context) it falls back to a
+  // hidden textarea + execCommand. Texts over 5 MB are refused.
+  const COPY_MAX = 5 * 1024 * 1024;
+  function copyFrom(href) {
+    const done = () => toast(T('web.copied'));
+    const fail = e => toast(e && e.ours ? e.message : T('copy.failed', String((e && e.message) || e)));
+    const get = () => fetch(href, { credentials: 'same-origin', cache: 'no-store' }).then(async r => {
+      const t = await r.text();
+      if (!r.ok) { let m = t; try { m = JSON.parse(t).message || t; } catch (_) { /* text */ } const e = new Error(T('copy.failed', m)); e.ours = true; throw e; }
+      const n = new Blob([t]).size;
+      if (n > COPY_MAX) { const e = new Error(T('copy.too_large', (n / 1048576).toFixed(1) + ' MB')); e.ours = true; throw e; }
+      return t;
+    });
+    const legacy = t => {
+      const ta = H('textarea', { style: 'position:fixed;top:0;left:0;opacity:0' }); ta.value = t;
+      document.body.append(ta); ta.focus(); ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+      ta.remove();
+      if (ok) done(); else toast(T('copy.failed', 'clipboard'));
+    };
+    if (window.isSecureContext && navigator.clipboard) {
+      // ClipboardItem with a promise keeps the click's permission (Safari)
+      if (window.ClipboardItem && navigator.clipboard.write) {
+        let fetched = null;
+        const p = get().then(t => { fetched = t; return new Blob([t], { type: 'text/plain' }); });
+        navigator.clipboard.write([new ClipboardItem({ 'text/plain': p })]).then(done, e => {
+          if (e && e.ours) { fail(e); return; }
+          p.then(() => navigator.clipboard.writeText(fetched).then(done, () => legacy(fetched)), fail);
+        });
+        return;
+      }
+      get().then(t => navigator.clipboard.writeText(t).then(done, () => legacy(t)), fail);
+      return;
+    }
+    get().then(legacy, fail);
+  }
+  function download(href) {
+    const a = H('a', { href, download: '' });
     document.body.append(a); a.click(); a.remove();
+  }
+  // tableExportButton: a Ping / HTTP / IP lookup table's 「导出 ▾」 menu.
+  // The server builds the file from the table as shown here: columns in
+  // table order, rows in table order (all, or only the selected ones),
+  // the time filter's range; extra() adds query fields (a guest's lookup).
+  function tableExportButton(kind, tbl, rb, extra) {
+    const href = (fmt, sel) => {
+      const rows = sel ? tbl.selected() : tbl.display();
+      const q = new URLSearchParams({ format: fmt, lang: LANG || DEFAULT_LANG || '', cols: tbl.cols.map(c => c.id).join(','), keys: rows.map(r => r.id).join(',') });
+      if (sel) q.set('selected', '1');
+      if (tbl.sort && tbl.sort.col) { q.set('sort', tbl.sort.col); if (tbl.sort.desc) q.set('desc', '1'); }
+      if (rb) for (const [k, v] of new URLSearchParams(rb.exportQuery())) q.set(k, v);
+      if (extra) for (const [k, v] of Object.entries(extra() || {})) if (v) q.set(k, v);
+      return '/api/' + kind + '/export?' + q;
+    };
+    const items = sel => [
+      { label: T('history.export.button'), run: () => download(href('csv', sel) + '&download=1') },
+      { label: T('history.export.txt'), run: () => download(href('txt', sel) + '&download=1') },
+      { label: T('history.export.md'), run: () => download(href('md', sel) + '&download=1') }, '-',
+      { label: T('copy.txt'), run: () => copyFrom(href('txt', sel)) },
+      { label: T('copy.md'), run: () => copyFrom(href('md', sel)) },
+    ];
+    return H('button', { class: 'btn sm tbl-export', onclick: e => {
+      const r = e.currentTarget.getBoundingClientRect(), total = tbl.display().length, n = tbl.selected().length;
+      if (!total) { toast(T('chart.empty')); return; }
+      openMenu(r.left, r.bottom + 4, n ? [{ label: T('table.export.all', total), sub: items(false) }, { label: T('table.export.selected', n), sub: items(true) }] : items(false));
+    } }, T('detail.export') + ' ▾');
+  }
+  // trace export: one tab (id) or all tabs (id 0, a zip); txt, csv or md
+  function traceExport(id, fmt) {
+    const q = new URLSearchParams({ format: fmt, lang: LANG || DEFAULT_LANG || '' });
+    if (id) q.set('tab', id); else q.set('all', '1');
+    download('/api/trace/export?' + q);
+  }
+  // traceTextURL: the TXT or Markdown of one tab, or of all tabs in one text
+  function traceTextURL(id, fmt) {
+    const q = new URLSearchParams({ format: fmt || 'txt', lang: LANG || DEFAULT_LANG || '' });
+    if (id) q.set('tab', id); else { q.set('all', '1'); q.set('join', '1'); }
+    return '/api/trace/export?' + q;
+  }
+  function traceExportItems(id) {
+    return [
+      { label: T('trace.export.tab_txt'), disabled: !id, run: () => traceExport(id, 'txt') },
+      { label: T('trace.export.tab_csv'), disabled: !id, run: () => traceExport(id, 'csv') },
+      { label: T('trace.export.tab_md'), disabled: !id, run: () => traceExport(id, 'md') },
+      { label: T('trace.copy.tab'), disabled: !id, run: () => copyFrom(traceTextURL(id, 'txt')) },
+      { label: T('trace.copy.tab_md'), disabled: !id, run: () => copyFrom(traceTextURL(id, 'md')) }, '-',
+      { label: T('trace.export.all_txt'), run: () => traceExport(0, 'txt') },
+      { label: T('trace.export.all_csv'), run: () => traceExport(0, 'csv') },
+      { label: T('trace.export.all_md'), run: () => traceExport(0, 'md') },
+      { label: T('trace.copy.all'), run: () => copyFrom(traceTextURL(0, 'txt')) },
+      { label: T('trace.copy.all_md'), run: () => copyFrom(traceTextURL(0, 'md')) },
+    ];
+  }
+
+  // ---------- time range filter (per browser tab, never saved on the server) ----------
+  const RANGE_PRESETS = ['all', 'today', 'yesterday', 'thisweek', 'lastweek', 'thismonth', 'lastmonth', 'thisyear', 'lastyear', 'custom'];
+  // rangeBounds: [from, to) in this browser's time zone; weeks start on Monday
+  function rangeBounds(p, now) {
+    const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+    const back = (now.getDay() + 6) % 7;
+    switch (p) {
+      case 'today': return [new Date(y, m, d), new Date(y, m, d + 1)];
+      case 'yesterday': return [new Date(y, m, d - 1), new Date(y, m, d)];
+      case 'thisweek': return [new Date(y, m, d - back), new Date(y, m, d - back + 7)];
+      case 'lastweek': return [new Date(y, m, d - back - 7), new Date(y, m, d - back)];
+      case 'thismonth': return [new Date(y, m, 1), new Date(y, m + 1, 1)];
+      case 'lastmonth': return [new Date(y, m - 1, 1), new Date(y, m, 1)];
+      case 'thisyear': return [new Date(y, 0, 1), new Date(y + 1, 0, 1)];
+      case 'lastyear': return [new Date(y - 1, 0, 1), new Date(y, 0, 1)];
+    }
+    return null;
+  }
+  const pad2 = n => String(n).padStart(2, '0');
+  const localInput = t => t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()) + 'T' + pad2(t.getHours()) + ':' + pad2(t.getMinutes());
+  const fmtMinute = t => localInput(t).replace('T', ' ');
+  // rangeBar: quick picks + custom range; onChange() re-renders the table.
+  // kind: ping | http | trace; tabId() gives the trace tab.
+  function rangeBar(kind, onChange, tabId) {
+    const key = 'ht.range.' + kind;
+    let st = { p: 'all' };
+    try { st = JSON.parse(sessionStorage.getItem(key) || 'null') || st; } catch (_) { /* default */ }
+    let res = null, resFor = '', busy = false, at = 0, err = '';
+    const sel = H('select', { 'aria-label': T('range.label') }, RANGE_PRESETS.map(p => H('option', { value: p, text: T('range.' + p) })));
+    const fromI = H('input', { type: 'datetime-local', step: '60' }), toI = H('input', { type: 'datetime-local', step: '60' });
+    const apply = H('button', { class: 'btn sm primary' }, T('range.apply'));
+    const cancel = H('button', { class: 'btn sm' }, T('range.cancel'));
+    const editor = H('div', { class: 'row range-edit' }, H('span', { class: 'desc', text: T('range.from') }), fromI, H('span', { class: 'desc', text: T('range.to') }), toI, apply, cancel);
+    const badge = H('span', { class: 'badge' }), clear = H('button', { class: 'btn sm' }, T('range.clear'));
+    const note = H('div', { class: 'status' });
+    const el = H('div', { class: 'range-bar' }, H('div', { class: 'row' }, H('span', { class: 'desc', text: T('range.label') }), sel, badge, clear), editor, note);
+    editor.hidden = true;
+    const save = () => sessionStorage.setItem(key, JSON.stringify(st));
+    const bounds = () => {
+      if (st.p === 'custom') return [st.from ? new Date(st.from) : null, st.to ? new Date(st.to) : null];
+      return rangeBounds(st.p, new Date());
+    };
+    const active = () => st.p !== 'all' && !!bounds();
+    const historyOff = () => kind !== 'trace' && S && !S.settings.historySave;
+    function openEditor() {
+      const b = bounds() || rangeBounds('today', new Date());
+      fromI.value = localInput(b[0] || rangeBounds('today', new Date())[0]);
+      toI.value = localInput(b[1] || new Date());
+      editor.hidden = false;
+    }
+    sel.onchange = () => {
+      if (sel.value === 'custom') { openEditor(); return; }
+      st = { p: sel.value }; editor.hidden = true; save(); refresh(true);
+    };
+    apply.onclick = () => {
+      const f = new Date(fromI.value), t = new Date(toI.value);
+      if (!(t > f)) { toast(T('range.err.order')); return; }
+      st = { p: 'custom', from: f.toISOString(), to: t.toISOString() }; editor.hidden = true; save(); refresh(true);
+    };
+    cancel.onclick = () => { editor.hidden = true; paint(); };
+    clear.onclick = () => { st = { p: 'all' }; editor.hidden = true; save(); refresh(true); };
+    function query() {
+      const b = bounds(), q = new URLSearchParams({ kind });
+      if (b[0]) q.set('from', b[0].toISOString());
+      if (b[1]) q.set('to', b[1].toISOString());
+      if (kind === 'trace' && tabId) q.set('tab', tabId() || 0);
+      return q.toString();
+    }
+    function paint() {
+      const off = historyOff();
+      sel.disabled = off;
+      sel.value = editor.hidden ? (off ? 'all' : st.p) : 'custom';
+      const on = active() && !off;
+      badge.hidden = clear.hidden = !on;
+      if (on) { const b = bounds(); badge.textContent = T('range.active', (b[0] ? fmtMinute(b[0]) : T('range.open_start')) + ' – ' + (b[1] ? fmtMinute(b[1]) : T('range.now'))); }
+      let n = '', cls = 'status';
+      if (off) n = T('range.need_history');
+      else if (on && err) { n = T('range.failed', err); cls = 'status err'; }
+      else if (on && kind === 'trace') n = T('range.trace_note');
+      else if (on && res && ['ping', 'http'].some(k => Object.values(res[k] || {}).some(x => x.approx))) n = T('range.approx');
+      else if (on) n = T('range.note');
+      note.textContent = n; note.className = cls;
+    }
+    async function refresh(force) {
+      paint();
+      if (!active() || historyOff()) { if (res) { res = null; onChange(); } return; }
+      const q = query();
+      const b = bounds(), live = !b[1] || b[1] > new Date();
+      if (busy || !force && q === resFor && (!live || Date.now() - at < 15000)) return;
+      busy = true; at = Date.now();
+      try {
+        const r = await fetch('/api/stats/range?' + q, { credentials: 'same-origin', cache: 'no-store' }).then(x => x.json());
+        if (!r.ok) throw new Error(r.message || 'error');
+        res = r.data; resFor = q; err = '';
+      } catch (e) { err = String(e.message || e); res = null; resFor = q; }
+      busy = false;
+      paint(); onChange();
+    }
+    const timer = setInterval(() => { if (el.isConnected) refresh(false); else clearInterval(timer); }, 15000);
+    // overlay: copy rows with the range's stats (same field names)
+    function overlay(rows, pick) {
+      if (!res || !res.active || !active() || historyOff() || resFor !== query()) return rows;
+      return rows.map(r => { const v = pick(res, r); return v ? Object.assign({}, r, v) : r; });
+    }
+    paint();
+    // exportQuery: the from/to of the filter while it applies, else ''
+    const exportQuery = () => {
+      if (!active() || historyOff()) return '';
+      const q = new URLSearchParams(query()); q.delete('kind'); q.delete('tab');
+      return q.toString();
+    };
+    return { el, refresh, overlay, active, exportQuery };
   }
 
   // ---------- app state ----------
@@ -648,7 +868,7 @@
       box.append(title, stats, chartBox, kv, actions);
       let text = '', host = '', lastSig = '';
       actions.append(
-        H('button', { class: 'btn', onclick: () => histCSV(ref, chart.range()) }, T('history.export.button')),
+        histExportButton(ref, () => chart.range()),
         H('button', { class: 'btn', onclick: () => copy(text) }, T('detail.copy_all')),
         H('button', { class: 'btn', onclick: () => { if (host) { api('ping/trace', { hosts: [host] }); closeModal(); go('trace'); } } }, T('detail.traceroute')),
         H('button', { class: 'btn primary', onclick: closeModal }, T('detail.close')));
@@ -761,7 +981,7 @@
       const title = H('h2'), url = H('div', { class: 'desc mono' }), stats = H('div', { class: 'stats' }), kv = H('div', { class: 'kv' }), err = H('div', { class: 'status bad' });
       const chart = chartWidget(ref);
       box.append(title, url, stats, chart.el, kv, err, H('div', { class: 'actions' },
-        H('button', { class: 'btn', onclick: () => histCSV(ref, chart.range()) }, T('history.export.button')),
+        histExportButton(ref, () => chart.range()),
         H('button', { class: 'btn primary', onclick: closeModal }, T('detail.close'))));
       let lastSig = '';
       return st => {
@@ -815,6 +1035,7 @@
       status));
     const C = (id, key, cell, sort, extra) => Object.assign({ id, label: key.includes('.') ? T(key) : key, cell, sort }, extra || {});
     const has = r => r.success > 0;
+    const rb = rangeBar('http', () => update());
     const tbl = Table({ id: 'http',
       key: r => r.id, check: true, defaultSort: '#', sortState: httpSort, empty: T('http.empty'),
       onSort: s => localStorage.setItem('ht.httpSort', JSON.stringify(s)),
@@ -823,7 +1044,7 @@
       onMenu: (e, r, sel) => openMenu(e.clientX, e.clientY, sel.length > 1 ? multi(sel) : one(r)),
       onSelect: () => { delBtn.disabled = tbl.selected().length === 0; },
       cols: [
-        C('#', 'ping.col.n', r => String(S.http.rows.indexOf(r) + 1), null, { num: true }),
+        C('#', 'ping.col.n', r => String(S.http.rows.findIndex(x => x.id === r.id) + 1), null, { num: true }),
         C('alias', 'ping.col.alias', r => dash(r.alias), r => r.alias.toLowerCase()),
         C('url', 'URL', r => r.spec.url, r => r.spec.url.toLowerCase(), { mono: true }),
         C('status', 'http.col.status', r => { const [c, l] = httpState(r); return [c + l, () => H('span', { class: 'badge ' + c, text: l })]; }, r => (r.failing ? 2 : 0) + (r.checks ? 0 : 1), { copy: r => httpState(r)[1] }),
@@ -837,7 +1058,7 @@
         C('failure', 'ping.col.failure', r => String(r.failure), r => r.failure, { num: true }),
         C('success_rate', 'ping.col.rate', r => (r.checks ? pct(r.successRate) : '—'), r => r.successRate, { num: true }),
         C('loss_rate', 'ping.col.loss', r => lossCell(r.lossRate, r.checks > 0), r => r.lossRate, { num: true, copy: r => (r.checks > 0 ? pct(r.lossRate) : '') }),
-        C('last', 'ping.col.last', r => ms(r.last, r.checks > 0 && r.ok), r => (r.checks ? r.last : null), { num: true }),
+        C('last', 'ping.col.last', r => ms(r.last, r.ranged ? has(r) : r.checks > 0 && r.ok), r => (r.checks ? r.last : null), { num: true }),
         C('avg', 'ping.col.avg', r => ms(r.avg, has(r)), r => (has(r) ? r.avg : null), { num: true }),
         C('min', 'ping.col.min', r => ms(r.min, has(r)), r => (has(r) ? r.min : null), { num: true }),
         C('max', 'ping.col.max', r => ms(r.max, has(r)), r => (has(r) ? r.max : null), { num: true }),
@@ -848,7 +1069,7 @@
       ],
     });
     root.append(H('section', { class: 'card grow' },
-      H('div', { class: 'row' }, H('h3', { text: T('http.list_label') }), H('span', { class: 'desc', text: T('web.table_hint') })), tbl.el));
+      H('div', { class: 'row' }, H('h3', { text: T('http.list_label') }), H('span', { class: 'desc', text: T('web.table_hint') }), H('span', { class: 'sp' }), tableExportButton('http', tbl, rb)), rb.el, tbl.el));
     function one(r) {
       const byOrder = httpSort.col === '#' && !httpSort.desc;
       const i = S.http.rows.findIndex(x => x.id === r.id);
@@ -896,7 +1117,11 @@
         startBtn.textContent = T(st.http.running ? 'http.stop_all' : 'http.start_all');
         startBtn.className = 'btn ' + (st.http.running ? '' : 'primary');
         status.textContent = st.http.status;
-        tbl.update(st.http.rows);
+        rb.refresh(false);
+        tbl.update(rb.overlay(st.http.rows, (res, r) => {
+          const v = res.http && res.http[r.id];
+          return v && Object.assign({}, v, { checks: v.success + v.failure, ranged: true });
+        }));
         delBtn.disabled = tbl.selected().length === 0;
       },
     };
@@ -939,6 +1164,7 @@
 
     const C = (id, key, cell, sort, extra) => Object.assign({ id, label: T(key), cell, sort }, extra || {});
     const has = r => r.success > 0;
+    const rb = rangeBar('ping', () => update());
     const tbl = Table({ id: 'ping',
       key: r => r.id, check: true, defaultSort: '#', sortState: pingSort, empty: T('ping.empty'),
       onSort: s => localStorage.setItem('ht.pingSort', JSON.stringify(s)),
@@ -947,7 +1173,7 @@
       onMenu: (e, r, sel) => openMenu(e.clientX, e.clientY, sel.length > 1 ? multiMenu(sel) : oneMenu(r)),
       onSelect: () => { delBtn.disabled = tbl.selected().length === 0; },
       cols: [
-        C('#', 'ping.col.n', r => String(S.ping.rows.indexOf(r) + 1), null, { num: true }),
+        C('#', 'ping.col.n', r => String(S.ping.rows.findIndex(x => x.id === r.id) + 1), null, { num: true }),
         C('alias', 'ping.col.alias', r => dash(r.alias), r => r.alias.toLowerCase()),
         C('host', 'ping.col.host', r => r.host, r => r.host.toLowerCase(), { mono: true }),
         C('ip', 'ping.col.ip', r => dash(r.ip), r => ipKey(r.ip), { mono: true }),
@@ -970,7 +1196,7 @@
       ],
     });
     root.append(H('section', { class: 'card grow' },
-      H('div', { class: 'row' }, H('h3', { text: T('ping.list_label') }), H('span', { class: 'desc', text: T('web.table_hint') })), tbl.el));
+      H('div', { class: 'row' }, H('h3', { text: T('ping.list_label') }), H('span', { class: 'desc', text: T('web.table_hint') }), H('span', { class: 'sp' }), tableExportButton('ping', tbl, rb)), rb.el, tbl.el));
 
     function delIDs(ids) {
       if (!ids.length) return;
@@ -1047,7 +1273,8 @@
         if (document.activeElement !== interval && lastInterval !== st.ping.interval) { interval.value = st.ping.interval; lastInterval = st.ping.interval; }
         status.textContent = st.ping.status; status.className = 'status' + (st.ping.running ? ' ok' : '');
         db.textContent = st.settings.dbLoading ? T('db.loading') : st.settings.dbStatus;
-        tbl.update(st.ping.rows);
+        rb.refresh(false);
+        tbl.update(rb.overlay(st.ping.rows, (res, r) => res.ping && res.ping[r.id]));
         delBtn.disabled = tbl.selected().length === 0;
       },
     };
@@ -1092,6 +1319,8 @@
     const has = r => r.success > 0;
     const C = (id, key, cell, sort, extra) => Object.assign({ id, label: T(key), cell, sort }, extra || {});
     const tblSort = { col: 'ttl', desc: false };
+    const rb = rangeBar('trace', () => update(), () => tab && tab.id);
+    const exportBtn = H('button', { class: 'btn sm', onclick: e => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, traceExportItems(tab ? tab.id : 0)); } }, T('trace.export'));
     const tbl = Table({ id: 'trace',
       key: r => r.ttl, check: true, defaultSort: 'ttl', sortState: tblSort, empty: T('trace.empty'),
       rowClass: r => (r.failing ? 'bad' : ''),
@@ -1136,7 +1365,7 @@
           H('label', { class: 'pill' }, mtr, H('span', { text: T('trace.mtr') })),
           H('label', { class: 'pill' }, H('span', { text: T('trace.interval') }), interval, H('span', { text: T('ping.seconds') })),
           runBtn, resetBtn)), status),
-      H('section', { class: 'card grow' }, H('h3', { text: T('trace.hops') }), tbl.el));
+      H('section', { class: 'card grow' }, H('div', { class: 'row' }, H('h3', { text: T('trace.hops') }), H('span', { class: 'sp' }), exportBtn), rb.el, tbl.el));
     root.append(H('div', { class: 'trace' }, side, main));
     const tabEls = new Map();
     let shownTab = null, guestTab = null;
@@ -1157,7 +1386,8 @@
             el.oncontextmenu = e => {
               e.preventDefault();
               const cur = S.trace.tabs.find(x => x.id === t.id) || t, idx = S.trace.tabs.indexOf(cur);
-              openMenu(e.clientX, e.clientY, [
+              openMenu(e.clientX, e.clientY, GUEST ? traceExportItems(t.id) : [
+                ...traceExportItems(t.id), '-',
                 cur.running ? { label: T('trace.tab.ctx.stop'), run: () => api('trace/stop', { id: t.id }) }
                   : { label: T('trace.tab.ctx.start'), disabled: !cur.host, run: () => api('trace/start', { id: t.id }) },
                 { label: T('trace.tab.ctx.duplicate'), run: () => api('trace/duplicate', { id: t.id }) },
@@ -1189,7 +1419,11 @@
         runBtn.className = 'btn ' + (tab.running ? '' : 'primary');
         resetBtn.disabled = tab.running;
         status.textContent = tab.status || T('trace.status.stopped');
-        tbl.update(tab.hops);
+        rb.refresh(false);
+        tbl.update(rb.overlay(tab.hops, (res, r) => {
+          const v = res.trace && res.trace[tab.id] && res.trace[tab.id][r.ttl];
+          return v && Object.assign({}, v, { rtt: ms(v.last, v.success > 0) });
+        }));
       },
     };
   }
@@ -1197,10 +1431,11 @@
   // ---------- IP lookup page ----------
   function lookupPage(root) {
     const ta = H('textarea', { rows: '5', class: 'w-full', placeholder: T('lookup.placeholder') });
-    let guestRows = null, guestStatus = '';
+    let guestRows = null, guestStatus = '', guestQuery = '';
     const run = async () => {
       if (!GUEST) { api('lookup', { text: ta.value }); return; }
       guestStatus = T('lookup.status.running', ta.value.split(/[\s,;]+/).filter(Boolean).length); status.textContent = guestStatus;
+      guestQuery = ta.value;
       try {
         const r = await fetch('/api/lookup/query?q=' + encodeURIComponent(ta.value), { cache: 'no-store' });
         const j = await r.json();
@@ -1247,7 +1482,8 @@
         C('error', 'lookup.col.error', r => dash(r.err), r => r.err),
       ],
     });
-    root.append(H('section', { class: 'card grow' }, H('h3', { text: T('lookup.results') }), tbl.el));
+    root.append(H('section', { class: 'card grow' }, H('div', { class: 'row' }, H('h3', { text: T('lookup.results') }), H('span', { class: 'sp' }),
+      tableExportButton('lookup', tbl, null, () => (GUEST && guestRows ? { q: guestQuery } : null))), tbl.el));
     let first = true;
     return {
       update(st) {

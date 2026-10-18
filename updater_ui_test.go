@@ -96,7 +96,7 @@ func TestUpdateRateLimitAndDev(t *testing.T) {
 }
 
 func TestUpdChecksumMsg(t *testing.T) {
-	err := fmt.Errorf("verify: %w", &update.ErrChecksum{Name: "HinaTracer-v1.2.2-windows-amd64.zip", Want: "aaaaaaaaaaaaaaaa", Got: "bbbbbbbbbbbbbbbb"})
+	err := fmt.Errorf("verify: %w", &update.ErrChecksum{Name: "HinaTracer-v1.2.3-windows-amd64.zip", Want: "aaaaaaaaaaaaaaaa", Got: "bbbbbbbbbbbbbbbb"})
 	m, ok := updChecksumMsg(err)
 	if !ok || !strings.Contains(m, "aaaaaaaaaaaa") || !strings.Contains(m, "windows-amd64.zip") || strings.Contains(m, "aaaaaaaaaaaaa") {
 		t.Fatalf("%q", m)

@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,14 +54,27 @@ func TestDetailRangeSelector(t *testing.T) {
 			tt := ui.NewTester(a.viewPingDetail, detailWinW, detailWinH)
 			tt.SetDark(dark)
 			tt.Frame()
-			for _, s := range []string{i18n.T("chart.range." + string(r)), i18n.T("history.export.button"), i18n.T("detail.close")} {
-				if rc, ok := tt.Find(s); !ok || rc.Y+rc.H > detailWinH {
+			for _, s := range []string{i18n.T("chart.range." + string(r)), i18n.T("detail.export"), i18n.T("detail.close")} {
+				if rc, ok := tt.Find(s); !ok || rc.Y+rc.H > detailWinH || rc.X+rc.W > detailWinW {
 					t.Fatalf("%s: %q missing/off screen", r, s)
 				}
 			}
 			mt := ui.NewTester(a.viewPingDetail, detailWinMinW, detailWinMinH)
-			if rc, ok := mt.Find(i18n.T("detail.close")); !ok || rc.Y+rc.H > detailWinMinH {
-				t.Fatalf("%s: close off screen at min size", r)
+			for _, s := range []string{i18n.T("detail.export"), i18n.T("detail.close")} {
+				if rc, ok := mt.Find(s); !ok || rc.Y+rc.H > detailWinMinH || rc.X+rc.W > detailWinMinW || rc.X < 0 {
+					t.Fatalf("%s: %q off screen at min size (%+v)", r, s, rc)
+				}
+			}
+			if i == 0 && !dark {
+				if err := tt.Click(i18n.T("detail.export")); err != nil {
+					t.Fatal(err)
+				}
+				tt.Frame()
+				want := []string{i18n.T("history.export.button"), i18n.T("history.export.txt"), i18n.T("history.export.md"), "-", i18n.T("copy.txt"), i18n.T("copy.md")}
+				if got := tt.Menu(); strings.Join(got, "|") != strings.Join(want, "|") {
+					t.Fatalf("export menu %q, want %q", got, want)
+				}
+				tt.CloseMenu()
 			}
 			if dir := os.Getenv("HT_CHART_PNG"); dir != "" {
 				name := "gui_range_" + string(r)

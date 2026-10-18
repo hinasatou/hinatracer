@@ -90,8 +90,10 @@ type app struct {
 	pingSel       ui.Selection[int]
 	pingSort      ui.SortOrder
 	pingSnaps     []pinger.Snapshot
-	aliasEdits    []string
-	aliasEditIDs  []int
+	// time filters of the Ping, HTTP and Trace tables (not saved)
+	rangePing, rangeHTTP, rangeTrace rangeFilter
+	aliasEdits                       []string
+	aliasEditIDs                     []int
 
 	// ping alias edit modal
 	aliasEditOpen bool
@@ -993,13 +995,18 @@ func (a *app) refreshPingSnaps() {
 }
 
 func (a *app) sortedPingSnaps() []pinger.Snapshot {
-	src := a.pingSnaps
+	return a.sortPingSnaps(a.rangeOverlayPing(a.pingSnaps), a.pingSort)
+}
+
+// sortPingSnaps orders snapshots like the Ping table sorted by o (the
+// config order for "#" or no column). UI thread (host metadata).
+func (a *app) sortPingSnaps(src []pinger.Snapshot, o ui.SortOrder) []pinger.Snapshot {
 	n := len(src)
 	if n == 0 {
 		return src
 	}
-	col := a.pingSort.Column
-	desc := a.pingSort.Descending
+	col := o.Column
+	desc := o.Descending
 	if col == "" || col == "#" {
 		if !desc {
 			return src

@@ -9,11 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"hinatracer/internal/txtalign"
 )
 
 // Range is the chart time base.
@@ -847,4 +850,76 @@ func CSVCode(w interface{ Write([]byte) (int, error) }, target, alias, ip string
 		}
 	}
 	return nil
+}
+
+// TXT writes points as plain text: "# " comment lines naming the target,
+// then a header row and one row per point in columns aligned with spaces
+// (see txtalign; numbers right-aligned). withCode adds the HTTP status
+// column.
+func TXT(w interface{ Write([]byte) (int, error) }, target, alias, ip string, withCode bool, pts []Point) error {
+	var b strings.Builder
+	for _, kv := range [][2]string{{"target", target}, {"alias", alias}, {"ip", ip}} {
+		if kv[1] != "" {
+			fmt.Fprintf(&b, "# %s: %s\n", kv[0], txtField(kv[1]))
+		}
+	}
+	rows, right := historyRows(target, alias, ip, withCode, pts)
+	txtalign.Table(&b, rows, right)
+	_, err := w.Write([]byte(b.String()))
+	return err
+}
+
+// historyRows is the header and one row per point of a history export,
+// and which columns hold numbers.
+func historyRows(target, alias, ip string, withCode bool, pts []Point) (rows [][]string, right []bool) {
+	head := []string{"time", "target", "alias", "ip", "samples", "avg", "min", "max", "loss%"}
+	right = []bool{false, false, false, false, true, true, true, true, true}
+	if withCode {
+		head = append(head, "code")
+		right = append(right, true)
+	}
+	rows = make([][]string, 0, len(pts)+1)
+	rows = append(rows, head)
+	for _, p := range pts {
+		r := []string{p.At.UTC().Format(time.RFC3339), target, alias, ip, strconv.Itoa(p.Samples),
+			strconv.FormatFloat(p.Avg, 'f', 3, 64), strconv.FormatFloat(p.Min, 'f', 3, 64),
+			strconv.FormatFloat(p.Max, 'f', 3, 64), strconv.FormatFloat(p.LossPct, 'f', 2, 64)}
+		if withCode {
+			r = append(r, strconv.Itoa(p.Code))
+		}
+		rows = append(rows, r)
+	}
+	return rows, right
+}
+
+// MD writes points as Markdown: a "## " heading (the alias, else the
+// target), a short list of the target, alias and IP, then a pipe table.
+// withCode adds the HTTP status column.
+func MD(w interface{ Write([]byte) (int, error) }, target, alias, ip string, withCode bool, pts []Point) error {
+	var b strings.Builder
+	title := alias
+	if strings.TrimSpace(title) == "" {
+		title = target
+	}
+	fmt.Fprintf(&b, "## %s\n\n", txtalign.MDText(title))
+	for _, kv := range [][2]string{{"target", target}, {"alias", alias}, {"ip", ip}} {
+		if strings.TrimSpace(kv[1]) != "" {
+			fmt.Fprintf(&b, "- %s: %s\n", kv[0], txtalign.MDText(kv[1]))
+		}
+	}
+	b.WriteByte('\n')
+	rows, right := historyRows(target, alias, ip, withCode, pts)
+	txtalign.Markdown(&b, rows, right)
+	_, err := w.Write([]byte(b.String()))
+	return err
+}
+
+// txtField keeps a value on one cell: tabs and line breaks become spaces.
+func txtField(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\t' || r == '\n' || r == '\r' {
+			return ' '
+		}
+		return r
+	}, s)
 }

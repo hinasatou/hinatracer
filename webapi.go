@@ -91,7 +91,9 @@ type wsTab struct {
 	Interval float64 `json:"interval"`
 	Running  bool    `json:"running"`
 	Status   string  `json:"status"`
-	Hops     []wsHop `json:"hops"`
+	// StartedAt is when the current run began (unix ms, 0 = never).
+	StartedAt int64   `json:"startedAt"`
+	Hops      []wsHop `json:"hops"`
 }
 
 type wsLookup struct {
@@ -255,7 +257,7 @@ func (a *app) webBuildState() wsState {
 	s.Trace.Tabs = make([]wsTab, 0, len(a.traceTabs))
 	for _, t := range a.traceTabs {
 		wt := wsTab{ID: t.ID, Title: t.title(), Host: t.Host, Alias: t.Alias, MTR: t.MTR,
-			Interval: t.Interval, Running: t.isRunning(), Status: t.Status}
+			Interval: t.Interval, Running: t.isRunning(), Status: t.Status, StartedAt: unixMs(t.StartedAt)}
 		t.mu.Lock()
 		hops := append([]traceHopView(nil), t.Hops...)
 		t.mu.Unlock()
@@ -279,21 +281,7 @@ func (a *app) webBuildState() wsState {
 	s.Lookup.Status = a.lookupStatus
 	rows := append([]lookupRow(nil), a.lookupRows...)
 	a.lookupMu.Unlock()
-	s.Lookup.Rows = make([]wsLookup, 0, len(rows))
-	for _, r := range rows {
-		wl := wsLookup{ID: r.ID, Query: r.Query, IP: r.IP, RDNS: r.RDNS, Status: r.Status, Err: r.Err,
-			Ping: lookupPingText(r), PingState: r.PingState, PingMs: r.PingMs}
-		if r.IP != "" {
-			wl.PingTgt = r.pingTarget()
-			m := a.hostMetaOf(r.IP)
-			wl.Loc, wl.Region, wl.ISO, wl.ASN, wl.ASNRegion, wl.ASNISO = m.Loc, m.Region, m.ISO, m.ASN, m.ASNRegion, m.ASNISO
-		}
-		wl.DomainTgt = r.domainTarget()
-		if wl.RDNS == "" && r.IP != "" {
-			wl.RDNS = "…"
-		}
-		s.Lookup.Rows = append(s.Lookup.Rows, wl)
-	}
+	s.Lookup.Rows = a.wsLookupRows(rows)
 
 	st := &s.Settings
 	st.IPDB, st.GeoIP, st.ASN = a.draftIPDB, a.draftGeoIP, a.draftASN
@@ -386,7 +374,9 @@ func webGuestAllowed(r *http.Request) bool {
 		switch p {
 		case "/", "/index.html", "/app.js", "/app.css", "/icon.png",
 			"/api/session", "/api/i18n", "/api/state", "/api/events", "/api/lookup/query",
-			"/api/history", "/api/history.csv":
+			"/api/history", "/api/history.csv", "/api/history.txt", "/api/history.md",
+			"/api/trace/export", "/api/stats/range",
+			"/api/ping/export", "/api/http/export", "/api/lookup/export":
 			return true
 		}
 		return strings.HasPrefix(p, "/flags/")
@@ -615,4 +605,25 @@ func (a *app) webEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// wsLookupRows converts IP lookup rows (host metadata from the cache,
+// "…" while the rDNS is pending). UI thread.
+func (a *app) wsLookupRows(rows []lookupRow) []wsLookup {
+	out := make([]wsLookup, 0, len(rows))
+	for _, r := range rows {
+		wl := wsLookup{ID: r.ID, Query: r.Query, IP: r.IP, RDNS: r.RDNS, Status: r.Status, Err: r.Err,
+			Ping: lookupPingText(r), PingState: r.PingState, PingMs: r.PingMs}
+		if r.IP != "" {
+			wl.PingTgt = r.pingTarget()
+			m := a.hostMetaOf(r.IP)
+			wl.Loc, wl.Region, wl.ISO, wl.ASN, wl.ASNRegion, wl.ASNISO = m.Loc, m.Region, m.ISO, m.ASN, m.ASNRegion, m.ASNISO
+		}
+		wl.DomainTgt = r.domainTarget()
+		if wl.RDNS == "" && r.IP != "" {
+			wl.RDNS = "…"
+		}
+		out = append(out, wl)
+	}
+	return out
 }

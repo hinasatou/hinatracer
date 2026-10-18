@@ -6,6 +6,19 @@
 
 適用於 Windows、macOS 和 Linux 的網絡工具：Ping 與 HTTP 監測、路由追蹤 / MTR、IP 查詢，每個位址都顯示位置、地區和 ASN。可以作為桌面程式使用，也可以在瀏覽器（WebUI）、命令列或 AI 助理（MCP）中使用。
 
+## 截圖
+
+<p align="center"><img src="docs/screenshots/ping-zh-HK.png" alt="Ping 監測" width="100%" /><br /><sub>Ping 監測</sub></p>
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/traceroute-zh-HK.png" alt="路由追蹤（MTR 模式）" /><br /><sub>路由追蹤（MTR 模式）</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/http-zh-HK.png" alt="HTTP 監測" /><br /><sub>HTTP 監測</sub></td>
+  </tr>
+</table>
+
+<p align="center"><img src="docs/screenshots/webui-dark-zh-HK.png" alt="瀏覽器中的 WebUI（深色主題）" width="100%" /><br /><sub>瀏覽器中的 WebUI（深色主題）</sub></p>
+
 ## 目錄
 
 - [功能](#功能)
@@ -31,6 +44,7 @@
 ### 路由追蹤 / MTR
 - 每個追蹤在獨立的分頁中執行；MTR 模式持續探測每一跳。可以一鍵全部開始或停止。
 - 在 Ping 目標或 IP 查詢結果上按右鍵即可追蹤；某一跳可以一鍵加入 Ping 監測。
+- **匯出**：在跳數結果上方的「匯出」按鈕或分頁右鍵選單中，把目前分頁或全部分頁（打包為 zip）匯出為 TXT（以空格對齊的欄，適合等寬字型檢視；中文按兩格計算，建議使用中文等寬字型如等距更紗黑體、細明體）、CSV 或 Markdown（標題與簡短清單後接管線表格）。檔案以別名（或目標）命名。「複製 TXT」把同樣的內容複製到剪貼簿（全部分頁時依次排列，每個分頁前有一行標題）；「複製 Markdown」同理，合併為一份文件，每個分頁一個 `##` 小節；超過 5 MB 時請改用匯出。
 
 ### IP 查詢
 - 查詢 IP 或網域，每行一個。網域會解析出全部 IPv4 和 IPv6 位址，並分別測一次延遲。
@@ -38,11 +52,13 @@
 ### 歷史與圖表
 - 按兩下某一行（或按 Enter）開啟詳情視窗查看延遲圖表：按每次探測、每分鐘、小時、日、週或月（平均線、最小–最大區間、丟包柱、十字準線）。
 - 可選擇把 Ping 和 HTTP 的歷史與表格統計儲存到磁碟（SQLite，預設保留 90 日），重新啟動後統計繼續累計。
-- 匯出 CSV：`time,target,alias,ip,samples,avg,min,max,loss%`。
+- 詳情視窗的「匯出」選單可匯出 CSV、TXT 或 Markdown：`time,target,alias,ip,samples,avg,min,max,loss%`。「複製 TXT」「複製 Markdown」把同樣的內容複製到剪貼簿。
 
 ### 表格
 - 任意欄排序，調整欄寬和欄順序（會記住），Ctrl/⌘ 或 Shift 多選（Ctrl+A / ⌘+A 全選），按右鍵對所有選取的行操作。
 - **複製欄**：把選取行的某一欄複製出來，每行一個值。
+- **匯出表格**：Ping、HTTP 和 IP 查詢表格上方的「匯出 ▾」按鈕按目前顯示的樣子（欄順序、排序、時間範圍統計）把表格匯出為 CSV（UTF-8 帶 BOM）、TXT（空格對齊）或 Markdown，或複製為 TXT / Markdown。選取了行時可選「全部列」或「只限已選列」。檔案名稱如 `hinatracer-ping-YYYYMMDD-HHMMSS.csv`。訪客也可匯出；HTTP 匯出不含請求標頭的值和請求內容，URL 中的密碼和權杖顯示為 `***`。
+- **時間範圍**：Ping、HTTP 和路由追蹤表格可以顯示某個時段的統計，而不是即時累計：今天、昨天、本週、上週（每週從週一開始）、本月、上月、今年、去年，或精確到分鐘的自訂起訖時間。篩選生效時會顯示目前範圍；按「清除篩選」回到即時。Ping 與 HTTP 需要開啟儲存歷史；路由追蹤使用程式本次啟動以來的探測。較早的數據只儲存為分鐘/小時/天彙總，這類時段的中位數為估算值。
 
 ### 桌面提醒
 在 **設定 → 桌面提醒** 中，預設全部關閉（僅桌面程式）：
@@ -157,11 +173,14 @@ hinatracer web passwd --clear               # 清除密碼
 | `ping list` / `ping add <host> [--alias A]` / `ping import <file>` | Ping 目標 |
 | `ping enable` / `disable` / `delete` / `alias` / `move` `<id\|host>` | 編輯目標 |
 | `ping start` / `ping stop` / `ping reset [--yes]` / `ping interval <s>` | 執行與重設 |
-| `ping history <id\|host> [--range R] [--csv]` | 歷史（R：probe、minute、hour、day、week、month） |
+| `ping history <id\|host> [--range R] [--csv\|--txt\|--md]` | 歷史（R：probe、minute、hour、day、week、month） |
 | `http list` / `http add <url> [options]` / `http edit` / `http import` | HTTP 目標 |
 | `http start` / `http stop` / `http reset [--yes]` / `http history` | 執行、重設、歷史 |
 | `trace list` / `trace new [host] [--mtr true] [--start]` / `trace show <tab>` | 路由追蹤分頁 |
 | `trace start\|stop\|close <tab>` / `trace startall` / `trace stopall` | 控制分頁 |
+| `trace export <tab>\|--all [--format txt\|csv\|md] [--out FILE]` | 匯出路由追蹤結果（全部分頁為 zip） |
+| `ping list` / `http list` / `lookup results` `--format csv\|txt\|md [--out FILE] [--sort COL [--desc]] [--cols a,b]` | 匯出 Ping / HTTP / IP 查詢表格 |
+| `ping list` / `http list` / `trace show <tab>` 加 `--range today`（`yesterday`、`thisweek`、`lastweek`、`thismonth`、`lastmonth`、`thisyear`、`lastyear`）或 `--from T --to T` | 某個時段的統計（T：`2026-10-01 08:00` 或 RFC 3339） |
 | `lookup <ip\|domain>...` | IP 查詢 |
 | `settings get` / `settings set key=value...` | 設定 |
 | `data download` / `update check` | 資料檔案與更新 |
@@ -235,6 +254,8 @@ WebUI 執行時，HinaTracer 同時是一個 MCP 伺服器（Streamable HTTP）�
 **第二次開啟 HinaTracer 沒反應。** 程式已經在執行（可能在系統匣裡）；已有的視窗會被帶到前面。
 
 **重設統計時要求確認。** 開啟儲存歷史時，重設會永久刪除已儲存的統計。命令列中加 `--yes`。
+
+**時間範圍清單是灰色的。** Ping 與 HTTP 的篩選讀取已儲存的歷史：請開啟「設定 → 監測歷史 → 儲存監測歷史到磁碟」。
 
 ## 授權條款
 

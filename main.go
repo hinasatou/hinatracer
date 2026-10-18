@@ -77,7 +77,7 @@ func main() {
 	saveDialog = func(def string) (string, error) {
 		return mygo.Dialog.Save(mygo.SaveDialogOptions{
 			Title: i18n.T("history.export.title"), DefaultPath: filepath.Join(downloadsDir(), def),
-			Filters: []mygo.FileFilter{{Name: "CSV", Extensions: []string{"csv"}}}, CreateDirectories: true,
+			Filters: saveFilters(def), CreateDirectories: true,
 		})
 	}
 	mygoShellOpen = func(url string) {
@@ -119,4 +119,12 @@ func main() {
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// saveFilters is the save dialog's type filter for a default file name.
+func saveFilters(def string) []mygo.FileFilter {
+	if label, ext := saveFilterFor(def); ext != "" {
+		return []mygo.FileFilter{{Name: label, Extensions: []string{ext}}}
+	}
+	return nil
 }

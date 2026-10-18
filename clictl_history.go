@@ -28,8 +28,18 @@ func (c *ctl) ctlHistory(q url.Values) error {
 		return errors.New("--range must be probe, minute, hour, day, week or month")
 	}
 	q.Set("range", rng)
-	if _, ok := c.flags["csv"]; ok || c.flags["out"] != "" {
-		body, err := c.call("GET", "/api/history.csv?"+q.Encode(), nil)
+	format := strings.ToLower(c.flags["format"])
+	if c.flags["txt"] == "true" {
+		format = "txt"
+	}
+	if c.flags["md"] == "true" {
+		format = "md"
+	}
+	if !validExportFormat(format) {
+		return errors.New("--format must be csv, txt or md")
+	}
+	if _, ok := c.flags["csv"]; ok || format != "" || c.flags["out"] != "" {
+		body, err := c.call("GET", "/api/history."+exportFormat(format)+"?"+q.Encode(), nil)
 		if err != nil {
 			return err
 		}

@@ -215,3 +215,7 @@ table.sized td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .menu .has-sub{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .menu .sub-arrow{opacity:.6}
 .menu.sub{position:fixed;max-height:70vh;overflow:auto}
+.range-bar{display:flex;flex-direction:column;gap:6px;margin:4px 0 8px}
+.range-bar select{min-width:150px}
+.range-edit input[type=datetime-local]{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:5px 8px}
+.row .sp,.card .row .sp{flex:1}

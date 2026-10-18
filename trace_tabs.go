@@ -22,15 +22,38 @@ type traceTab struct {
 	Alias    string
 	MTR      bool
 	Interval float64
-	running  atomic.Bool
-	Status   string
-	mu       sync.Mutex // guards Hops for session/UI cross-thread access
-	Hops     []traceHopView
-	Selected int
-	Table    ui.ListState
-	Sel      ui.Selection[int] // by TTL
-	Sort     ui.SortOrder
-	session  *trace.Session
+	// StartedAt is when the current run began (zero = never started).
+	StartedAt time.Time
+	running   atomic.Bool
+	Status    string
+	mu        sync.Mutex // guards Hops, meta, metaPending for session/UI cross-thread access
+	Hops      []traceHopView
+	// meta caches the rDNS/geo/ASN of each hop address of this run;
+	// metaPending marks addresses whose lookup is in flight.
+	meta        map[string]hopMetaVals
+	metaPending map[string]bool
+	Selected    int
+	Table       ui.ListState
+	Sel         ui.Selection[int] // by TTL
+	Sort        ui.SortOrder
+	session     *trace.Session
+}
+
+// hopMetaVals is the looked-up text of one hop address.
+type hopMetaVals struct {
+	RDNS, Location, Region, ISO, ASN, ASNRegion, ASNISO string
+}
+
+func (m hopMetaVals) fill(v *traceHopView) {
+	v.RDNS, v.Location, v.Region, v.ISO = m.RDNS, m.Location, m.Region, m.ISO
+	v.ASN, v.ASNRegion, v.ASNISO = m.ASN, m.ASNRegion, m.ASNISO
+}
+
+// resetMeta forgets the looked-up hop text (new run or cleared results).
+func (t *traceTab) resetMeta() {
+	t.mu.Lock()
+	t.meta, t.metaPending = nil, nil
+	t.mu.Unlock()
 }
 
 func (t *traceTab) title() string {
@@ -288,7 +311,11 @@ func (a *app) startTraceTab(tab *traceTab) {
 	sess := trace.NewSession()
 	tab.session = sess
 	tab.setRunning(true)
+	tab.StartedAt = time.Now()
+	tab.mu.Lock()
 	tab.Hops = nil
+	tab.mu.Unlock()
+	tab.resetMeta()
 	tab.Selected = -1
 	tab.Status = i18n.Tf("trace.status.running", host)
 	tabID, h := tab.ID, a.hist
@@ -316,17 +343,18 @@ func (a *app) applySessionToTab(tab *traceTab) {
 	running := tab.session.Running()
 	err := tab.session.Err()
 
-	// Merge into hop views; preserve RDNS/geo when IP unchanged.
-	prevByTTL := map[int]traceHopView{}
-	tab.mu.Lock()
-	for _, h := range tab.Hops {
-		prevByTTL[h.TTL] = h
-	}
-	tab.mu.Unlock()
+	// Build hop views; rDNS/geo come from the per-address cache. An address
+	// not looked up yet shows the loading placeholder and is looked up once
+	// (the result lands in the cache and the installed hops, whichever
+	// comes first, so a later update can never bring the placeholder back).
 	hops := make([]traceHopView, 0, len(snaps))
 	var needMeta []struct {
 		ttl  int
 		addr string
+	}
+	tab.mu.Lock()
+	if tab.meta == nil {
+		tab.meta, tab.metaPending = map[string]hopMetaVals{}, map[string]bool{}
 	}
 	for _, s := range snaps {
 		view := traceHopView{
@@ -351,24 +379,21 @@ func (a *app) applySessionToTab(tab *traceTab) {
 			} else {
 				view.RTT = "—"
 			}
-			if prev, ok := prevByTTL[s.TTL]; ok && prev.Addr == s.Addr && prev.Addr != "*" {
-				view.RDNS = prev.RDNS
-				view.Location = prev.Location
-				view.Region = prev.Region
-				view.ISO = prev.ISO
-				view.ASN = prev.ASN
-				view.ASNRegion = prev.ASNRegion
-				view.ASNISO = prev.ASNISO
+			if m, ok := tab.meta[s.Addr]; ok {
+				m.fill(&view)
 			} else {
 				view.RDNS = "…"
 				view.Location = i18n.T("cell.loading")
 				view.Region = i18n.T("cell.loading")
 				view.ASN = i18n.T("cell.loading")
 				view.ASNRegion = i18n.T("cell.loading")
-				needMeta = append(needMeta, struct {
-					ttl  int
-					addr string
-				}{s.TTL, s.Addr})
+				if !tab.metaPending[s.Addr] {
+					tab.metaPending[s.Addr] = true
+					needMeta = append(needMeta, struct {
+						ttl  int
+						addr string
+					}{s.TTL, s.Addr})
+				}
 			}
 		}
 		hops = append(hops, view)
@@ -376,6 +401,11 @@ func (a *app) applySessionToTab(tab *traceTab) {
 
 	apply := func() {
 		tab.mu.Lock()
+		for i := range hops { // lookups that finished meanwhile
+			if m, ok := tab.meta[hops[i].Addr]; ok && hops[i].Addr != "*" {
+				m.fill(&hops[i])
+			}
+		}
 		tab.Hops = hops
 		tab.mu.Unlock()
 		tab.setRunning(running)
@@ -393,6 +423,7 @@ func (a *app) applySessionToTab(tab *traceTab) {
 			tab.Status = i18n.Tf("trace.status.running", tab.Host)
 		}
 	}
+	tab.mu.Unlock()
 	if a.win != nil {
 		a.win.Update(func() {
 			defer recoverAndLog("trace.applySession", false)
@@ -408,24 +439,28 @@ func (a *app) applySessionToTab(tab *traceTab) {
 }
 
 func (a *app) fillTraceHopMeta(tab *traceTab, ttl int, addr string) {
-	if addr == "" || addr == "*" || net.ParseIP(addr) == nil {
+	if addr == "" || addr == "*" {
 		return
 	}
-	loc, region, iso, asnText, asnRegion, asnISO := a.lookupAllForIP(addr)
-	rdns := lookupHostRDNS(addr, 3*time.Second)
+	m := hopMetaVals{RDNS: "—", Location: "—", Region: "—", ASN: "—", ASNRegion: "—"}
+	if net.ParseIP(addr) != nil {
+		loc, region, iso, asnText, asnRegion, asnISO := a.lookupAllForIP(addr)
+		rdns := lookupHostRDNS(addr, 3*time.Second)
+		m = hopMetaVals{RDNS: rdns, Location: loc, Region: region, ISO: iso, ASN: asnText, ASNRegion: asnRegion, ASNISO: asnISO}
+	}
+	_ = ttl
+	tab.mu.Lock()
+	if tab.meta != nil { // nil: the run was reset meanwhile
+		tab.meta[addr] = m
+		delete(tab.metaPending, addr)
+	}
+	tab.mu.Unlock()
 	apply := func() {
 		tab.mu.Lock()
 		defer tab.mu.Unlock()
 		for i := range tab.Hops {
-			if tab.Hops[i].TTL == ttl && tab.Hops[i].Addr == addr {
-				tab.Hops[i].Location = loc
-				tab.Hops[i].Region = region
-				tab.Hops[i].ISO = iso
-				tab.Hops[i].ASN = asnText
-				tab.Hops[i].ASNRegion = asnRegion
-				tab.Hops[i].ASNISO = asnISO
-				tab.Hops[i].RDNS = rdns
-				return
+			if tab.Hops[i].Addr == addr {
+				m.fill(&tab.Hops[i])
 			}
 		}
 	}
@@ -610,6 +645,7 @@ func (a *app) clearTraceTab(tab *traceTab) {
 	}
 	a.remoteTraceOp("/api/trace/reset", tab, nil)
 	tab.mu.Lock()
+	tab.meta, tab.metaPending = nil, nil
 	tab.Hops = nil
 	tab.mu.Unlock()
 	tab.Status = ""

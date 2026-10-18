@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -222,6 +220,7 @@ func (a *app) viewHTTP(c *ui.Context) {
 	}
 	ro := a.readOnly()
 	rows, running := a.httpView()
+	rows = a.rangeOverlayHTTP(rows)
 	display := sortHTTPRows(rows, h.sort)
 	keys := httpKeys(display)
 
@@ -277,6 +276,10 @@ func (a *app) viewHTTP(c *ui.Context) {
 	}).Shrink(0)
 
 	card(c, func() {
+		var exportPick tableExportPick
+		a.viewRangeBar(c, &a.rangeHTTP, "http", 0, func() {
+			exportPick = tableExportMenu(c, len(display), selectionCount(keys, &h.sel, h.selected))
+		})
 		cols := httpColumns()
 		if len(display) == 0 {
 			ui.Column(c).Padding(12).AlignItems(ui.Center).Children(func() {
@@ -296,6 +299,8 @@ func (a *app) viewHTTP(c *ui.Context) {
 		} else {
 			h.table.Reorder = nil
 		}
+		// rows re-sort as samples arrive: keep the scroll offset, not the top row
+		h.table.KeepOffset = true
 		h.table.Key = func(i int) any {
 			if i >= 0 && i < len(keys) {
 				return keys[i]
@@ -400,6 +405,13 @@ func (a *app) viewHTTP(c *ui.Context) {
 		}).Grow(1).MinWidth(0).MinHeight(pageTableMinH).Label(i18n.T("http.list_label"))
 		clearTableSelection(tbl, &h.selected, &h.sel)
 		a.noteLayout("http", h.table.Columns)
+		if exportPick.set {
+			ks := keys
+			if exportPick.selected {
+				ks = selectedKeys(keys, &h.sel, h.selected)
+			}
+			a.runTableExport("http", exportPick, tableExportQuery(exportPick, arrangedColumnIDs(cols, h.table.Columns), ks, h.sort, a.rangeHTTP.activeQuery("http")))
+		}
 		if tbl.Submitted() && submitAllowed(keys, &h.sel, h.selected) {
 			if ids := selectedKeys(keys, &h.sel, h.selected); len(ids) == 1 {
 				openHTTPDetailFn(a, ids[0])
@@ -416,30 +428,33 @@ func (a *app) viewHTTP(c *ui.Context) {
 
 // httpColumns are the Ping table's columns with URL, status and code in
 // place of host and rDNS.
-func httpColumns() []ui.TableColumn {
+func httpColumns() []ui.TableColumn { return httpColumnsT(i18n.T) }
+
+// httpColumnsT is httpColumns with titles from tr (an export language).
+func httpColumnsT(tr func(string) string) []ui.TableColumn {
 	return []ui.TableColumn{
-		{Title: i18n.T("ping.col.n"), ID: "#", Width: 44, Align: ui.Center, Sortable: true, Fixed: true},
-		{Title: i18n.T("ping.col.alias"), ID: "alias", Width: 110, Sortable: true},
+		{Title: tr("ping.col.n"), ID: "#", Width: 44, Align: ui.Center, Sortable: true, Fixed: true},
+		{Title: tr("ping.col.alias"), ID: "alias", Width: 110, Sortable: true},
 		{Title: "URL", ID: "url", Width: 220, Sortable: true},
-		{Title: i18n.T("http.col.status"), ID: "status", Width: 76, Sortable: true},
-		{Title: i18n.T("http.col.code"), ID: "code", Width: 64, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.ip"), ID: "ip", Width: 128, Sortable: true},
-		{Title: i18n.T("ping.col.location"), ID: "location", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.region"), ID: "region", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.asn"), ID: "asn", Width: 180, Sortable: true},
-		{Title: i18n.T("ping.col.asn_region"), ID: "asn_region", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("http.col.checked"), ID: "checked", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
+		{Title: tr("http.col.status"), ID: "status", Width: 76, Sortable: true},
+		{Title: tr("http.col.code"), ID: "code", Width: 64, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.ip"), ID: "ip", Width: 128, Sortable: true},
+		{Title: tr("ping.col.location"), ID: "location", Width: 140, Sortable: true},
+		{Title: tr("ping.col.region"), ID: "region", Width: 140, Sortable: true},
+		{Title: tr("ping.col.asn"), ID: "asn", Width: 180, Sortable: true},
+		{Title: tr("ping.col.asn_region"), ID: "asn_region", Width: 140, Sortable: true},
+		{Title: tr("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("http.col.checked"), ID: "checked", Width: 140, Sortable: true},
+		{Title: tr("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
+		{Title: tr("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
 	}
 }
 
@@ -812,8 +827,12 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 			if h.exportMsg != "" {
 				ui.Text(c, h.exportMsg).FontSize(11).TextColor(t.TextMuted).Grow(1).MinWidth(0).Selectable()
 			}
-			if ui.Button(c, i18n.T("history.export.button")).Clicked() {
-				a.exportHTTPCSV(r, rng)
+			if act := detailExportMenu(c); act.format != "" {
+				if act.copy {
+					a.copyHTTPText(r, rng, act.format)
+				} else {
+					a.exportHTTP(r, rng, act.format)
+				}
 			}
 			if ui.PrimaryButton(c, i18n.T("detail.close")).Clicked() && h.win != nil {
 				h.win.Close()
@@ -822,36 +841,39 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 	})
 }
 
-func (a *app) exportHTTPCSV(r wsHTTP, rng history.Range) {
+func (a *app) exportHTTP(r wsHTTP, rng history.Range, format string) {
 	h := &a.http
 	h.exportMsg = i18n.T("history.export.working")
 	b := a.be()
 	q := url.Values{"http": {strconv.Itoa(r.ID)}, "range": {string(rng)}}
 	safeGo("http.export", func() {
-		data, err := b.Get("/api/history.csv?" + q.Encode())
-		name := csvFileName(r.Spec.URL, rng)
-		path := ""
-		if err == nil {
-			var derr error
-			path, derr = saveDialog(name)
-			if derr == nil && path == "" {
-				_ = a.run(func() { h.exportMsg = "" })
-				return
-			}
-			if derr != nil {
-				path = filepath.Join(downloadsDir(), name)
-			}
-			err = os.WriteFile(path, data, 0o644)
+		data, err := b.Get("/api/history." + exportFormat(format) + "?" + q.Encode())
+		msg := ""
+		if err != nil {
+			msg = i18n.Tf("history.export.failed", err.Error())
+		} else {
+			msg = saveExportFile(historyFileName(r.Spec.URL, rng, format), data)
 		}
 		_ = a.run(func() {
-			if err != nil {
-				h.exportMsg = i18n.Tf("history.export.failed", err.Error())
-			} else {
-				h.exportMsg = i18n.Tf("history.export.saved", path)
-			}
+			h.exportMsg = msg
 			if h.win != nil {
 				h.win.Update(func() {})
 			}
 		})
+	})
+}
+
+// copyHTTPText copies the same TXT or Markdown as the export to the
+// clipboard.
+func (a *app) copyHTTPText(r wsHTTP, rng history.Range, format string) {
+	h := &a.http
+	h.exportMsg = i18n.T("history.export.working")
+	b := a.be()
+	q := url.Values{"http": {strconv.Itoa(r.ID)}, "range": {string(rng)}}
+	a.copyFetched(func() ([]byte, error) { return b.Get("/api/history." + exportFormat(format) + "?" + q.Encode()) }, func(msg string) {
+		h.exportMsg = msg
+		if h.win != nil {
+			h.win.Update(func() {})
+		}
 	})
 }

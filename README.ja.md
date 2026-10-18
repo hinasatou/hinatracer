@@ -6,6 +6,19 @@
 
 Windows・macOS・Linux 向けのネットワークツールです。Ping と HTTP の監視、ルート追跡 / MTR、IP 検索ができ、すべてのアドレスに位置・地域・ASN を表示します。デスクトップアプリのほか、ブラウザ（WebUI）、コマンドライン、AI アシスタント（MCP）からも使えます。
 
+## スクリーンショット
+
+<p align="center"><img src="docs/screenshots/ping-ja.png" alt="Ping 監視" width="100%" /><br /><sub>Ping 監視</sub></p>
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/traceroute-ja.png" alt="ルート追跡（MTR モード）" /><br /><sub>ルート追跡（MTR モード）</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/http-ja.png" alt="HTTP 監視" /><br /><sub>HTTP 監視</sub></td>
+  </tr>
+</table>
+
+<p align="center"><img src="docs/screenshots/webui-dark-ja.png" alt="ブラウザーで使う WebUI（ダークテーマ）" width="100%" /><br /><sub>ブラウザーで使う WebUI（ダークテーマ）</sub></p>
+
 ## 目次
 
 - [機能](#機能)
@@ -31,6 +44,7 @@ Windows・macOS・Linux 向けのネットワークツールです。Ping と HT
 ### ルート追跡 / MTR
 - 追跡ごとに別のタブで実行し、MTR モードでは各ホップを探測し続けます。すべてのタブを一度に開始・停止できます。
 - Ping ターゲットや IP 検索結果を右クリックして追跡でき、ホップはワンクリックで Ping 監視に追加できます。
+- **エクスポート**：ホップ表の上の「エクスポート」ボタンまたはタブの右クリックメニューから、このタブまたはすべてのタブ（zip にまとめて）を TXT（スペースで揃えた列。等幅フォントで表示してください。全角文字は 2 桁として計算します。MS ゴシックや Sarasa Mono J などの和文等幅フォント推奨）、CSV または Markdown（見出しと短いリストの後にパイプテーブル）で保存できます。ファイル名は別名（なければターゲット）です。「TXT をコピー」は同じ内容をクリップボードにコピーします（すべてのタブでは見出し行付きで順に並べます）。「Markdown をコピー」も同様で、タブごとに `##` セクションを持つ 1 つの文書になります。5 MB を超える場合はファイルにエクスポートしてください。
 
 ### IP 検索
 - IP またはドメインを 1 行に 1 つずつ検索します。ドメインはすべての IPv4 / IPv6 アドレスに解決され、それぞれの遅延を簡易測定します。
@@ -38,11 +52,13 @@ Windows・macOS・Linux 向けのネットワークツールです。Ping と HT
 ### 履歴とグラフ
 - 行をダブルクリック（または Enter）すると詳細ウィンドウに遅延グラフを表示：探測ごと、分・時・日・週・月ごと（平均線、最小–最大の帯、損失の棒、十字線）。
 - Ping と HTTP の履歴と表の統計をディスクに保存可能（SQLite、既定で 90 日保持）。再起動後も統計を引き継ぎます。
-- CSV エクスポート：`time,target,alias,ip,samples,avg,min,max,loss%`。
+- 詳細ウィンドウの「エクスポート」メニューから CSV / TXT / Markdown を保存：`time,target,alias,ip,samples,avg,min,max,loss%`。「TXT をコピー」「Markdown をコピー」で同じ内容をクリップボードにコピーできます。
 
 ### 表
 - 任意の列で並べ替え、列幅と列順の変更（記憶されます）、Ctrl/⌘ や Shift で複数選択（Ctrl+A / ⌘+A で全選択）、右クリックで選択中のすべての行を操作。
 - **列をコピー**：選択した行の 1 列を、1 行に 1 つの値でコピーします。
+- **表のエクスポート**：Ping、HTTP、IP 検索の表の上にある「エクスポート ▾」ボタンで、表示どおり（列の順序、並べ替え、期間の統計）に CSV（BOM 付き UTF-8）、TXT（スペースで整列）、Markdown で保存、または TXT / Markdown としてコピーできます。行を選択しているときは「すべての行」か「選択した行のみ」を選べます。ファイル名は `hinatracer-ping-YYYYMMDD-HHMMSS.csv` などです。ゲストもエクスポートできます。HTTP のエクスポートにはリクエストヘッダーの値と本文を含めず、URL 内のパスワードやトークンは `***` と表示します。
+- **期間**：Ping・HTTP・ルート追跡の表は、リアルタイムの累計の代わりに期間の統計を表示できます：今日、昨日、今週、先週（週は月曜始まり）、今月、先月、今年、昨年、または分単位で指定した開始と終了。絞り込み中は期間が表示され、「フィルターを解除」でリアルタイムに戻ります。Ping と HTTP には履歴のディスク保存が必要です。ルート追跡のホップは今回の起動以降の測定を使います。分 / 時間 / 日の集計としてのみ残っている古い期間では、中央値は推定値です。
 
 ### デスクトップ通知
 **設定 → デスクトップ通知** で設定します。既定ではすべてオフです（デスクトップアプリのみ）：
@@ -157,11 +173,14 @@ hinatracer web passwd --clear               # 削除
 | `ping list` / `ping add <host> [--alias A]` / `ping import <file>` | Ping ターゲット |
 | `ping enable` / `disable` / `delete` / `alias` / `move` `<id\|host>` | ターゲットの編集 |
 | `ping start` / `ping stop` / `ping reset [--yes]` / `ping interval <s>` | 実行とリセット |
-| `ping history <id\|host> [--range R] [--csv]` | 履歴（R：probe、minute、hour、day、week、month） |
+| `ping history <id\|host> [--range R] [--csv\|--txt\|--md]` | 履歴（R：probe、minute、hour、day、week、month） |
 | `http list` / `http add <url> [options]` / `http edit` / `http import` | HTTP ターゲット |
 | `http start` / `http stop` / `http reset [--yes]` / `http history` | 実行・リセット・履歴 |
 | `trace list` / `trace new [host] [--mtr true] [--start]` / `trace show <tab>` | ルート追跡タブ |
 | `trace start\|stop\|close <tab>` / `trace startall` / `trace stopall` | タブの操作 |
+| `trace export <tab>\|--all [--format txt\|csv\|md] [--out FILE]` | ルート追跡結果のエクスポート（すべてのタブは zip） |
+| `ping list` / `http list` / `lookup results` `--format csv\|txt\|md [--out FILE] [--sort COL [--desc]] [--cols a,b]` | Ping / HTTP / IP 検索の表をエクスポート |
+| `ping list` / `http list` / `trace show <tab>` に `--range today`（`yesterday`、`thisweek`、`lastweek`、`thismonth`、`lastmonth`、`thisyear`、`lastyear`）または `--from T --to T` | 期間の統計（T：`2026-10-01 08:00` または RFC 3339） |
 | `lookup <ip\|domain>...` | IP 検索 |
 | `settings get` / `settings set key=value...` | 設定 |
 | `data download` / `update check` | データファイルと更新 |
@@ -235,6 +254,8 @@ WebUI の実行中、HinaTracer は `http://HOST:PORT/mcp` の MCP サーバー�
 **HinaTracer をもう一度開いても何も起きない。** すでに実行中です（トレイにある場合も）。既存のウィンドウが前面に表示されます。
 
 **統計リセットで確認を求められる。** 履歴をディスクに保存している場合、リセットすると保存済みの統計は完全に削除されます。コマンドラインでは `--yes` を付けます。
+
+**期間のリストがグレーになっている。** Ping と HTTP の絞り込みは保存された履歴を読みます：「設定 → 監視履歴 → 監視履歴をディスクに保存」をオンにしてください。
 
 ## ライセンス
 

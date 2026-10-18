@@ -152,7 +152,7 @@ func paintLatencyChart(p *ui.Painter, r ui.Rect, m latencyChartModel, t *ui.Them
 		}
 	}
 	flush(n - 1)
-	p.FillPath(&area, t.Accent.Alpha(0.16))
+	p.FillPathGradient(&area, chartAreaFill(t))
 	p.StrokePath(&line, 1.6, t.Accent)
 	// isolated points (a sample between losses) stay visible
 	for i, v := range m.Vals {

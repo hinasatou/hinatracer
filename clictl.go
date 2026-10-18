@@ -47,6 +47,9 @@ Connection:
 
 Ping monitoring:
   ping list [--failing]                 targets and statistics
+  ping list --format csv|txt|md [--out FILE] [--sort COL [--desc]] [--cols a,b,...] [--failing] [TIME RANGE]
+                                        export the table (columns as in the GUI, ids e.g.
+                                        alias,host,ip,avg,loss_rate; default: all)
   ping show <id|host>                   one target in detail
   ping add <host> [--alias A] [--replace]
   ping import <file|->  [--mode replace|skip]   one "host [alias]" per line
@@ -59,11 +62,13 @@ Ping monitoring:
                                         --yes is required while history is saved to disk
   ping interval <seconds>
   ping trace <host>...                  open traceroute tabs for hosts
-  ping history <id|host> [--range R] [--limit N] [--csv] [--out FILE]
+  ping history <id|host> [--range R] [--limit N] [--csv|--txt|--md|--format csv|txt|md] [--out FILE]
                                         R: probe, minute, hour, day, week, month
 
 HTTP monitoring:
-  http list [--failing]                 targets and statistics
+  http list [--failing] [TIME RANGE]    targets and statistics
+  http list --format csv|txt|md [--out FILE] [--sort COL [--desc]] [--cols ...]
+                                        export the table (header values never included)
   http show <id|url|alias>              one target in detail (header values hidden)
   http add <url> [--alias A] [--method GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS|<custom>] [--interval S] [--timeout S]
            [--expect 200-299,301|2xx] [--match TEXT] [--regex] [--invert]
@@ -75,22 +80,32 @@ HTTP monitoring:
   http move <id|url|alias> up|down
   http start  /  http stop
   http reset [<id|url|alias>...] [--yes]  (--yes required while history is saved to disk)
-  http history <id|url|alias> [--range R] [--limit N] [--csv] [--out FILE]
+  http history <id|url|alias> [--range R] [--limit N] [--csv|--txt|--md|--format csv|txt|md] [--out FILE]
 
 Traceroute:
   trace list
-  trace show <tab> [--history]          hops of a tab (tab = id or host)
+  trace show <tab> [--history] [TIME RANGE]  hops of a tab (tab = id or host)
+  trace export <tab>|--all [--format txt|csv|md] [--out FILE]
+                                        one tab as TXT/CSV, or every tab in a zip
   trace new [host] [--alias A] [--mtr true|false] [--interval S] [--start]
   trace set <tab> [--host H] [--alias A] [--mtr true|false] [--interval S]
   trace start|stop|close|reset|duplicate|activate|closeothers <tab>
   trace move <tab> <position>
   trace startall  /  trace stopall
-  trace history <tab> <ttl> [--range R] [--csv] [--out FILE]
+  trace history <tab> <ttl> [--range R] [--csv|--txt|--md|--format csv|txt|md] [--out FILE]
+
+Time range (ping list, http list, trace show; also their exports): statistics of a period
+instead of the live totals. Ping and HTTP need saved history; trace hops
+use the probes kept in memory since the server started.
+  --range today|yesterday|thisweek|lastweek|thismonth|lastmonth|thisyear|lastyear|all
+  --from T  --to T                      T: RFC 3339 or "YYYY-MM-DD HH:MM" (server's time zone);
+                                        an explicit bound overrides the preset's
 
 IP lookup:
   lookup <ip|domain>...                 look up without touching the page
   lookup page <ip|domain>...            run on the IP lookup page
   lookup results  /  lookup clear       read / clear the page
+  lookup results --format csv|txt|md [--out FILE] [--sort COL [--desc]] [--cols ...]
 
 Settings:
   settings get
@@ -133,7 +148,7 @@ type ctl struct {
 }
 
 // ctlBoolFlags take no value.
-var ctlBoolFlags = map[string]bool{"json": true, "replace": true, "start": true, "failing": true, "history": true, "csv": true, "stdin": true, "clear": true, "help": true, "h": true, "yes": true, "y": true, "regex": true, "invert": true, "no-follow": true, "insecure": true}
+var ctlBoolFlags = map[string]bool{"json": true, "replace": true, "start": true, "failing": true, "history": true, "csv": true, "stdin": true, "clear": true, "help": true, "h": true, "yes": true, "y": true, "regex": true, "invert": true, "no-follow": true, "insecure": true, "txt": true, "md": true, "all": true, "desc": true}
 
 func parseCtlArgs(args []string) (pos []string, flags map[string]string, err error) {
 	flags = map[string]string{}
@@ -485,16 +500,26 @@ func (c *ctl) cmdPing() error {
 	sub := c.sub()
 	switch sub {
 	case "", "list", "ls":
+		if c.wantsTableExport() {
+			return c.tableExport("ping")
+		}
 		st, err := c.state()
 		if err != nil {
 			return err
 		}
 		failing := c.flags["failing"] == "true"
+		rr, err := c.rangeStats("ping", 0)
+		if err != nil {
+			return err
+		}
 		var rows [][]string
 		var list []wsPing
 		for _, r := range st.Ping.Rows {
 			if failing && !r.Failing {
 				continue
+			}
+			if rr != nil {
+				rangePing(&r, rr.Ping[r.ID])
 			}
 			r.Lat, r.Hist = nil, nil
 			list = append(list, r)
@@ -510,10 +535,15 @@ func (c *ctl) cmdPing() error {
 				ms(r.Last, ok), ms(r.Avg, ok), ms(r.Min, ok), ms(r.Max, ok)})
 		}
 		if c.json {
-			c.printJSON(map[string]any{"running": st.Ping.Running, "interval": st.Ping.Interval, "targets": list})
+			out := map[string]any{"running": st.Ping.Running, "interval": st.Ping.Interval, "targets": list}
+			if rr != nil {
+				out["timeRange"] = rangeInfo(rr)
+			}
+			c.printJSON(out)
 			return nil
 		}
 		fmt.Fprintln(c.out, st.Ping.Status)
+		c.printRange(rr)
 		c.table([]string{"ID", "HOST", "ALIAS", "STATE", "REGION", "OK", "FAIL", "LOSS", "LAST", "AVG", "MIN", "MAX"}, rows)
 		return nil
 	case "show":
@@ -716,21 +746,33 @@ func (c *ctl) cmdTrace() error {
 		if err != nil {
 			return err
 		}
+		rr, err := c.rangeStats("trace", id)
+		if err != nil {
+			return err
+		}
 		for _, t := range st.Trace.Tabs {
 			if t.ID != id {
 				continue
 			}
 			for i := range t.Hops {
+				if rr != nil {
+					rangeHop(&t.Hops[i], rr.Trace[id][t.Hops[i].TTL])
+				}
 				t.Hops[i].Lat = nil
 				if c.flags["history"] != "true" {
 					t.Hops[i].Hist = nil
 				}
 			}
 			if c.json {
+				if rr != nil {
+					c.printJSON(map[string]any{"tab": t, "timeRange": rangeInfo(rr)})
+					return nil
+				}
 				c.printJSON(t)
 				return nil
 			}
 			fmt.Fprintf(c.out, "%s  %s\n", t.Title, t.Status)
+			c.printRange(rr)
 			var rows [][]string
 			for _, h := range t.Hops {
 				ok := h.Success > 0
@@ -741,6 +783,8 @@ func (c *ctl) cmdTrace() error {
 			return nil
 		}
 		return errors.New("not found")
+	case "export":
+		return c.traceExport()
 	case "new":
 		body := map[string]any{}
 		if len(c.args) > 0 {
@@ -891,6 +935,9 @@ func (c *ctl) cmdLookup() error {
 	case "clear":
 		return c.post("/api/lookup/clear", nil)
 	case "results":
+		if c.wantsTableExport() {
+			return c.tableExport("lookup")
+		}
 		st, err := c.state()
 		if err != nil {
 			return err

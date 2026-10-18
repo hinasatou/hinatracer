@@ -6,6 +6,19 @@ English | [中文(简体)](README.zh-CN.md) | [中文(繁體)](README.zh-HK.md) 
 
 A network toolkit for Windows, macOS and Linux: Ping and HTTP monitoring, traceroute / MTR and IP lookup, with location, region and ASN details for every address. Use it as a desktop app, in a browser (WebUI), from the command line or from AI assistants (MCP).
 
+## Screenshots
+
+<p align="center"><img src="docs/screenshots/ping-en.png" alt="Ping monitoring" width="100%" /><br /><sub>Ping monitoring</sub></p>
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/traceroute-en.png" alt="Traceroute (MTR mode)" /><br /><sub>Traceroute (MTR mode)</sub></td>
+    <td width="50%" align="center"><img src="docs/screenshots/http-en.png" alt="HTTP monitoring" /><br /><sub>HTTP monitoring</sub></td>
+  </tr>
+</table>
+
+<p align="center"><img src="docs/screenshots/webui-dark-en.png" alt="WebUI in a browser (dark theme)" width="100%" /><br /><sub>WebUI in a browser (dark theme)</sub></p>
+
 ## Contents
 
 - [Features](#features)
@@ -31,6 +44,7 @@ A network toolkit for Windows, macOS and Linux: Ping and HTTP monitoring, tracer
 ### Traceroute / MTR
 - Each trace runs in its own tab; MTR mode keeps probing every hop. Start or stop all tabs at once.
 - Trace any Ping target or IP lookup result from the right-click menu; send a hop to Ping monitoring with one click.
+- **Export**: save one tab, or every tab as a zip, as TXT (columns aligned with spaces; view it in a monospace font, CJK counted as two columns, e.g. Sarasa Mono or NSimSun for CJK), CSV or Markdown (a pipe table under a heading and a short list) from the **Export** button above the hop table or the tab's right-click menu. Files are named after the alias (or the target). **Copy TXT** puts the same text on the clipboard (all tabs: one after another, each under its own header line); **Copy Markdown** does the same as one document with a `##` section per tab; over 5 MB, export a file instead.
 
 ### IP lookup
 - Look up IPs or domains, one per line. Domains resolve to all their IPv4 and IPv6 addresses, each with a quick latency check.
@@ -38,11 +52,13 @@ A network toolkit for Windows, macOS and Linux: Ping and HTTP monitoring, tracer
 ### History and charts
 - Double-click a row (or press Enter) to open its detail window with a latency chart: per probe, per minute, hour, day, week or month (average line, min–max band, loss bars, crosshair).
 - Optionally save Ping and HTTP history and table statistics to disk (SQLite, kept 90 days by default), so the totals continue after a restart.
-- Export CSV: `time,target,alias,ip,samples,avg,min,max,loss%`.
+- From the detail window's **Export** menu: CSV, TXT or Markdown files: `time,target,alias,ip,samples,avg,min,max,loss%`. **Copy TXT** / **Copy Markdown** put the same text on the clipboard.
 
 ### Tables
 - Sort by any column, resize and reorder columns (remembered), multi-select with Ctrl/⌘ or Shift (Ctrl+A / ⌘+A selects all) and act on all selected rows from the right-click menu.
 - **Copy column**: copy one column of all selected rows, one value per line.
+- **Export table**: the **Export ▾** button above the Ping, HTTP and IP lookup tables saves the table as shown (column order, sort order, time range statistics) as CSV (UTF-8 with BOM), TXT (aligned with spaces) or Markdown, or copies it as TXT / Markdown. With rows selected, choose **All rows** or **Selected rows only**. Files are named `hinatracer-ping-YYYYMMDD-HHMMSS.csv` and so on. Guests may export too; HTTP exports never include request header values or the body, and passwords or tokens in URLs show as `***`.
+- **Time range**: the Ping, HTTP and traceroute tables can show the statistics of a period instead of the live totals: today, yesterday, this week, last week (weeks start on Monday), this month, last month, this year, last year, or your own start and end to the minute. A label shows the range while it is active; **Clear filter** returns to live. Ping and HTTP need history saved to disk; traceroute hops use the probes since the program started. For older periods that are only kept as minute / hour / day summaries, the median is an estimate.
 
 ### Desktop alerts
 All off by default, under **Settings → Desktop alerts** (desktop app only):
@@ -157,11 +173,14 @@ With the desktop app's WebUI or `hinatracer --web` running, control it from a te
 | `ping list` / `ping add <host> [--alias A]` / `ping import <file>` | Ping targets |
 | `ping enable` / `disable` / `delete` / `alias` / `move` `<id\|host>` | Edit targets |
 | `ping start` / `ping stop` / `ping reset [--yes]` / `ping interval <s>` | Run and reset |
-| `ping history <id\|host> [--range R] [--csv]` | History (R: probe, minute, hour, day, week, month) |
+| `ping history <id\|host> [--range R] [--csv\|--txt\|--md]` | History (R: probe, minute, hour, day, week, month) |
 | `http list` / `http add <url> [options]` / `http edit` / `http import` | HTTP targets |
 | `http start` / `http stop` / `http reset [--yes]` / `http history` | Run, reset, history |
 | `trace list` / `trace new [host] [--mtr true] [--start]` / `trace show <tab>` | Traceroute tabs |
 | `trace start\|stop\|close <tab>` / `trace startall` / `trace stopall` | Control tabs |
+| `trace export <tab>\|--all [--format txt\|csv\|md] [--out FILE]` | Export trace results (all tabs: a zip) |
+| `ping list` / `http list` / `lookup results` `--format csv\|txt\|md [--out FILE] [--sort COL [--desc]] [--cols a,b]` | Export the Ping / HTTP / IP lookup table |
+| `ping list` / `http list` / `trace show <tab>` with `--range today` (`yesterday`, `thisweek`, `lastweek`, `thismonth`, `lastmonth`, `thisyear`, `lastyear`) or `--from T --to T` | Statistics of a period (T: `2026-10-01 08:00` or RFC 3339) |
 | `lookup <ip\|domain>...` | IP lookup |
 | `settings get` / `settings set key=value...` | Settings |
 | `data download` / `update check` | Data files and updates |
@@ -235,6 +254,8 @@ Settings, targets and tabs are stored in `config.json`; `history.db` (if enabled
 **Nothing happens when I open HinaTracer a second time.** It is already running (perhaps in the tray); the existing window is brought to the front.
 
 **Reset Stats asks for confirmation.** When history is saved to disk, resetting deletes the saved totals for good. On the command line add `--yes`.
+
+**The time range list is greyed out.** Ping and HTTP filters read the saved history: turn on **Settings → Monitoring history → Save monitoring history to disk**.
 
 ## License
 

@@ -88,34 +88,38 @@ func (a *app) webRoutesHistory(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, apiResult{OK: true, Data: map[string]any{"key": key, "range": rng, "points": pts}})
 	})
-	mux.HandleFunc("GET /api/history.csv", func(w http.ResponseWriter, r *http.Request) {
-		rng := history.Range(r.URL.Query().Get("range"))
-		if !history.ValidRange(string(rng)) {
-			rng = history.RangeProbe
-		}
-		var key, target, alias, ip string
-		var data []byte
-		err := a.run(func() {
-			var ok bool
-			key, target, alias, ip, ok = a.historyKeyFromReq(r)
-			if !ok {
+	export := func(format string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			rng := history.Range(r.URL.Query().Get("range"))
+			if !history.ValidRange(string(rng)) {
+				rng = history.RangeProbe
+			}
+			var key, target, alias, ip string
+			var src func(string, history.Range, int) []history.Point
+			err := a.run(func() {
+				var ok bool
+				key, target, alias, ip, ok = a.historyKeyFromReq(r)
+				if ok {
+					src = a.historySource()
+				}
+			})
+			if err != nil {
+				writeJSON(w, 503, apiResult{Message: err.Error()})
 				return
 			}
-			data = a.historyCSV(key, target, alias, ip, rng)
-		})
-		if err != nil {
-			writeJSON(w, 503, apiResult{Message: err.Error()})
-			return
+			if key == "" {
+				writeJSON(w, 404, apiResult{Message: "not found"})
+				return
+			}
+			data := historyExportFrom(src, key, target, alias, ip, rng, format)
+			w.Header().Set("Content-Type", exportMIME(format))
+			w.Header().Set("Content-Disposition", `attachment; filename="`+historyFileName(target, rng, format)+`"`)
+			_, _ = w.Write(data)
 		}
-		if key == "" {
-			writeJSON(w, 404, apiResult{Message: "not found"})
-			return
-		}
-		name := csvFileName(target, rng)
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
-		_, _ = w.Write(data)
-	})
+	}
+	mux.HandleFunc("GET /api/history.csv", export("csv"))
+	mux.HandleFunc("GET /api/history.txt", export("txt"))
+	mux.HandleFunc("GET /api/history.md", export("md"))
 	mux.Handle("POST /api/settings/history", mutate(a, func(r struct {
 		Save *bool `json:"save"`
 		Days *int  `json:"days"`

@@ -369,8 +369,7 @@ func (a *app) viewIPLookup(c *ui.Context) {
 		}).Shrink(0)
 
 		card(c, func() {
-			ui.Text(c, i18n.T("lookup.results")).FontSize(14).Bold()
-			display := rows
+			display := a.sortedLookupRows(rows)
 			cols := lookupColumns()
 			n := len(display)
 			if n == 0 {
@@ -380,6 +379,12 @@ func (a *app) viewIPLookup(c *ui.Context) {
 			for i, r := range display {
 				keys[i] = r.ID
 			}
+			var exportPick tableExportPick
+			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				ui.Text(c, i18n.T("lookup.results")).FontSize(14).Bold()
+				ui.Spacer(c)
+				exportPick = tableExportMenu(c, n, selectionCount(keys, &a.lookupSel, a.lookupSelected))
+			})
 			a.lookupTable.Key = func(i int) any {
 				if i >= 0 && i < len(keys) {
 					return keys[i]
@@ -456,6 +461,13 @@ func (a *app) viewIPLookup(c *ui.Context) {
 			}).Grow(1).MinHeight(pageTableMinH).MinWidth(0)
 			clearTableSelection(tbl, &a.lookupSelected, &a.lookupSel)
 			a.noteLayout("lookup", a.lookupTable.Columns)
+			if exportPick.set {
+				ks := keys
+				if exportPick.selected {
+					ks = selectedKeys(keys, &a.lookupSel, a.lookupSelected)
+				}
+				a.runLookupExport(exportPick, tableExportQuery(exportPick, arrangedColumnIDs(cols, a.lookupTable.Columns), ks, a.lookupSort, ""))
+			}
 			tbl.ContextMenu(func(m *ui.Menu) {
 				a.lookupMenu(m, display, keys, &post)
 			})
@@ -578,16 +590,36 @@ func lookupAddTargets(rows []lookupRow) (ips, domains, trace []string) {
 }
 
 // lookupColumns are the table columns (also listed by the copy-column menu).
-func lookupColumns() []ui.TableColumn {
+func lookupColumns() []ui.TableColumn { return lookupColumnsT(i18n.T) }
+
+// lookupColumnsT is lookupColumns with titles from tr (an export language).
+func lookupColumnsT(tr func(string) string) []ui.TableColumn {
 	return []ui.TableColumn{
-		{Title: i18n.T("lookup.col.query"), ID: "query", Width: 140, Sortable: true},
-		{Title: i18n.T("lookup.col.ip"), ID: "ip", Width: 140, Sortable: true},
-		{Title: i18n.T("lookup.col.ping"), ID: "ping", Width: 110, Align: ui.End, Sortable: true},
-		{Title: i18n.T("lookup.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
-		{Title: i18n.T("lookup.col.location"), ID: "location", Width: 130, Sortable: true},
-		{Title: i18n.T("lookup.col.region"), ID: "region", Width: 130, Sortable: true},
-		{Title: i18n.T("lookup.col.asn"), ID: "asn", Width: 180, Sortable: true},
-		{Title: i18n.T("lookup.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
-		{Title: i18n.T("lookup.col.error"), ID: "error", Width: 160, Sortable: true},
+		{Title: tr("lookup.col.query"), ID: "query", Width: 140, Sortable: true},
+		{Title: tr("lookup.col.ip"), ID: "ip", Width: 140, Sortable: true},
+		{Title: tr("lookup.col.ping"), ID: "ping", Width: 110, Align: ui.End, Sortable: true},
+		{Title: tr("lookup.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
+		{Title: tr("lookup.col.location"), ID: "location", Width: 130, Sortable: true},
+		{Title: tr("lookup.col.region"), ID: "region", Width: 130, Sortable: true},
+		{Title: tr("lookup.col.asn"), ID: "asn", Width: 180, Sortable: true},
+		{Title: tr("lookup.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
+		{Title: tr("lookup.col.error"), ID: "error", Width: 160, Sortable: true},
 	}
+}
+
+// sortedLookupRows orders the rows by the table's sort column (like the
+// WebUI). UI thread (host metadata).
+func (a *app) sortedLookupRows(rows []lookupRow) []lookupRow {
+	if a.lookupSort.Column == "" || len(rows) < 2 {
+		return rows
+	}
+	by := make(map[int]lookupRow, len(rows))
+	for _, r := range rows {
+		by[r.ID] = r
+	}
+	out := make([]lookupRow, 0, len(rows))
+	for _, w := range sortLookupRows(a.wsLookupRows(rows), a.lookupSort) {
+		out = append(out, by[w.ID])
+	}
+	return out
 }

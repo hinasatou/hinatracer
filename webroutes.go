@@ -382,6 +382,7 @@ func (a *app) webRoutes(mux *http.ServeMux) {
 		if _, t := a.traceTabByID(r.ID); t != nil && !t.isRunning() {
 			t.mu.Lock()
 			t.Hops = nil
+			t.meta, t.metaPending = nil, nil
 			t.mu.Unlock()
 			t.Status = ""
 		}
@@ -478,6 +479,9 @@ func (a *app) webRoutes(mux *http.ServeMux) {
 	}))
 
 	a.webRoutesHistory(mux)
+	a.webRoutesTraceExport(mux)
+	a.webRoutesTableExport(mux)
+	a.webRoutesRangeStats(mux)
 
 	// --- Data download ---
 	mux.Handle("POST /api/datadl/start", mutate(a, func(struct{}) apiResult {

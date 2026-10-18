@@ -120,6 +120,7 @@ func (a *app) applyRemoteMirror(st wsState) {
 		seen[wt.ID] = now
 		t.setRunning(wt.Running)
 		t.Status = wt.Status
+		t.StartedAt = msTime(wt.StartedAt)
 		hops := make([]traceHopView, len(wt.Hops))
 		for i, h := range wt.Hops {
 			hv := traceHopView{TTL: h.TTL, Addr: h.Addr, RDNS: h.RDNS, RTT: h.RTT, Location: h.Loc, Region: h.Region,

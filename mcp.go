@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -709,9 +711,9 @@ func mcpBaseTools() []mcpTool {
 				}
 				return r.Data, nil
 			}},
-		{Name: "export_history_csv", Title: "Export latency history CSV",
-			Desc:   "CSV of latency history (columns: time,target,alias,ip,samples,avg,min,max,loss%). Same selectors as get_history.",
-			Schema: jsObj(map[string]any{"id": jsInt("Ping target id."), "tab": jsInt("Traceroute tab id."), "ttl": jsInt("Hop TTL."), "httpId": jsInt("HTTP target id."), "range": jsEnum("Aggregation range.", "probe", "minute", "hour", "day", "week", "month")}),
+		{Name: "export_history_csv", Title: "Export latency history (CSV or TXT)",
+			Desc:   "Latency history as CSV (columns: time,target,alias,ip,samples,avg,min,max,loss%; HTTP adds code), TXT (same columns aligned with spaces) or Markdown (md). Same selectors as get_history.",
+			Schema: jsObj(map[string]any{"id": jsInt("Ping target id."), "tab": jsInt("Traceroute tab id."), "ttl": jsInt("Hop TTL."), "httpId": jsInt("HTTP target id."), "range": jsEnum("Aggregation range.", "probe", "minute", "hour", "day", "week", "month"), "format": jsEnum("csv (default), txt (columns aligned with spaces, '# ' comment lines) or md (Markdown: heading, list, pipe table).", "csv", "txt", "md")}),
 			Run: func(c mcpCall, a map[string]any) (any, error) {
 				q := url.Values{}
 				if _, ok := a["id"]; ok {
@@ -729,11 +731,132 @@ func mcpBaseTools() []mcpTool {
 				if r := argStr(a, "range"); r != "" {
 					q.Set("range", r)
 				}
-				raw, err := c.raw("GET", "/api/history.csv?"+q.Encode())
+				format := exportFormat(argStr(a, "format"))
+				raw, err := c.raw("GET", "/api/history."+format+"?"+q.Encode())
 				if err != nil {
 					return nil, err
 				}
-				return map[string]any{"csv": string(raw)}, nil
+				return map[string]any{format: string(raw)}, nil
+			}},
+		{Name: "get_range_stats", Title: "Table statistics for a time range",
+			Desc: "Ping, HTTP and traceroute table statistics (success, failure, successRate, lossRate, last, avg, min, max, median in ms; lastOk/lastFail unix ms) over a time range instead of the live totals. " +
+				"Use range (weeks start Monday, server time zone) or from/to (RFC 3339 or 'YYYY-MM-DD HH:MM'); an explicit bound overrides the preset's. Ping and HTTP need saved history (historyOff=true otherwise); trace hops use probes kept in memory. " +
+				"approx=true: part of the range only survives as minute/hour/day buckets, so the median is estimated and the edges are rounded. Results are keyed by target id (trace: tab id, then TTL).",
+			Schema: jsObj(map[string]any{
+				"range": jsEnum("Quick pick.", "today", "yesterday", "thisweek", "lastweek", "thismonth", "lastmonth", "thisyear", "lastyear", "all"),
+				"from":  jsStr("Start (inclusive)."), "to": jsStr("End (exclusive)."),
+				"kind": jsEnum("Only this table (default: all).", "ping", "http", "trace"), "tab": jsInt("Trace: only this tab id."),
+			}),
+			Run: func(c mcpCall, a map[string]any) (any, error) {
+				q := url.Values{}
+				for _, k := range []string{"range", "from", "to", "kind"} {
+					if v := argStr(a, k); v != "" {
+						q.Set(k, v)
+					}
+				}
+				if _, ok := a["tab"]; ok {
+					q.Set("tab", strconv.Itoa(argInt(a, "tab")))
+				}
+				var r apiResult
+				if err := c.do("GET", "/api/stats/range?"+q.Encode(), nil, &r); err != nil {
+					return nil, err
+				}
+				return r.Data, nil
+			}},
+		{Name: "export_trace", Title: "Export traceroute results",
+			Desc:   "A trace tab's hop table as TXT (columns aligned with spaces, '# ' lines with target, alias, start time, mode), Markdown (md: heading, list, pipe table) or CSV (UTF-8 with BOM). all=true returns every tab with a target as separate files (the GUI/WebUI save them as one zip).",
+			Schema: jsObj(map[string]any{"tab": jsInt("Trace tab id (see list_trace_tabs)."), "all": jsBool("Export every tab."), "format": jsEnum("File format (default csv).", "txt", "csv", "md")}),
+			Run: func(c mcpCall, a map[string]any) (any, error) {
+				format := exportFormat(argStr(a, "format"))
+				q := url.Values{"format": {format}}
+				all, _ := argBool(a, "all")
+				if all {
+					q.Set("all", "1")
+				} else {
+					if argInt(a, "tab") <= 0 {
+						return nil, errors.New("tab or all is required")
+					}
+					q.Set("tab", strconv.Itoa(argInt(a, "tab")))
+				}
+				raw, err := c.raw("GET", "/api/trace/export?"+q.Encode())
+				if err != nil {
+					return nil, err
+				}
+				if !all {
+					return map[string]any{"format": format, "content": strings.TrimPrefix(string(raw), utf8BOM)}, nil
+				}
+				zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+				if err != nil {
+					return nil, err
+				}
+				var files []map[string]string
+				for _, f := range zr.File {
+					rc, err := f.Open()
+					if err != nil {
+						return nil, err
+					}
+					b, err := io.ReadAll(io.LimitReader(rc, 8<<20))
+					rc.Close()
+					if err != nil {
+						return nil, err
+					}
+					files = append(files, map[string]string{"name": f.Name, "content": strings.TrimPrefix(string(b), utf8BOM)})
+				}
+				return map[string]any{"format": format, "files": files}, nil
+			}},
+		{Name: "export_table", Title: "Export the Ping, HTTP or IP lookup table",
+			Desc: "The Ping, HTTP or IP lookup page table as TXT (columns aligned with spaces, '# ' header lines: export time, time range, sort, row count), Markdown (md: heading, list, pipe table) or CSV (UTF-8 with BOM). " +
+				"Cell text as on the page, without flag emoji or loading placeholders. HTTP exports never include request header values or body; URL passwords and token-like query values are shown as ***. " +
+				"Column ids: ping: #, alias, host, ip, rdns, location, region, asn, asn_region, success, failure, success_rate, loss_rate, last, avg, min, max, median, last_ok, last_fail; " +
+				"http: #, alias, url, status, code, ip, location, region, asn, asn_region, success, failure, success_rate, loss_rate, last, avg, min, max, median, checked, last_ok, last_fail; " +
+				"lookup: query, ip, ping, rdns, location, region, asn, asn_region, error. A time range (Ping and HTTP, needs saved history) uses the statistics of that period.",
+			Schema: jsObj(map[string]any{
+				"table":   jsEnum("Which table.", tableExportKinds...),
+				"format":  jsEnum("File format (default csv).", "csv", "txt", "md"),
+				"columns": jsStrs("Column ids in order (default: every column)."),
+				"ids":     jsInts("Only these row ids, in this order (target ids; lookup: row ids)."),
+				"sort":    jsStr("Sort by this column id (default: list order)."), "descending": jsBool("Sort descending."),
+				"failingOnly": jsBool("Ping / HTTP: only rows that look abnormal."),
+				"range":       jsEnum("Time range quick pick (Ping / HTTP).", "today", "yesterday", "thisweek", "lastweek", "thismonth", "lastmonth", "thisyear", "lastyear", "all"),
+				"from":        jsStr("Range start (RFC 3339 or 'YYYY-MM-DD HH:MM')."), "to": jsStr("Range end (exclusive)."),
+			}, "table"),
+			Run: func(c mcpCall, a map[string]any) (any, error) {
+				kind := argStr(a, "table")
+				if !slices.Contains(tableExportKinds, kind) {
+					return nil, errors.New("table must be ping, http or lookup")
+				}
+				format := argStr(a, "format")
+				if !validExportFormat(format) {
+					return nil, errors.New("format must be csv, txt or md")
+				}
+				format = exportFormat(format)
+				q := url.Values{"format": {format}}
+				for _, k := range []string{"sort", "range", "from", "to"} {
+					if v := argStr(a, k); v != "" {
+						q.Set(k, v)
+					}
+				}
+				if cols := argStrs(a, "columns"); len(cols) > 0 {
+					q.Set("cols", strings.Join(cols, ","))
+				}
+				if _, ok := a["ids"]; ok {
+					var ks []string
+					for _, id := range argInts(a, "ids") {
+						ks = append(ks, strconv.Itoa(id))
+					}
+					q.Set("keys", strings.Join(ks, ","))
+				}
+				if v, _ := argBool(a, "descending"); v {
+					q.Set("desc", "1")
+				}
+				if v, _ := argBool(a, "failingOnly"); v {
+					q.Set("failing", "1")
+				}
+				raw, err := c.raw("GET", "/api/"+kind+"/export?"+q.Encode())
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"format": format, "content": strings.TrimPrefix(string(raw), utf8BOM)}, nil
 			}},
 		{Name: "set_history", Title: "Monitoring history settings", Write: true,
 			Desc:   "Enable/disable saving monitoring history (Ping and HTTP history and table statistics) to disk and set retention days (1–3650). Omitted fields keep their value.",

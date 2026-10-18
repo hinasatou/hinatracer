@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/chart"
 
 	"hinatracer/i18n"
 	"hinatracer/internal/history"
@@ -257,6 +259,11 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 	yAt := func(v float64) float32 { return plot.Y + plot.H - float32(v/m.YMax)*plot.H }
 	bw := float32(math.Max(2, float64(step)*0.6))
 	probe := m.Range == history.RangeProbe
+	pxW := int(math.Ceil(float64(plot.W * p.Scale())))
+	if chartDecimate && n > 2*pxW && pxW > 0 {
+		paintRangeDecimated(p, plot, m, probe, pxW, t)
+		return
+	}
 	for i, pt := range m.Pts {
 		if pt.LossPct <= 0 {
 			continue
@@ -304,9 +311,9 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 		}
 		band.Close()
 		if probe {
-			p.FillPath(&band, t.Accent.Alpha(0.16))
+			p.FillPathGradient(&band, chartAreaFill(t))
 		} else {
-			p.FillPath(&band, t.Accent.Alpha(0.2))
+			p.FillPathGradient(&band, ui.LinearGradient{From: t.Accent.Alpha(0.28), To: t.Accent.Alpha(0.12), Angle: 180})
 		}
 		p.StrokePath(&line, 1.6, t.Accent)
 		if from == to {
@@ -329,6 +336,105 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 		}
 	}
 	seg(start, n-1)
+}
+
+// chartDecimate turns on the reduced drawing of charts with more points
+// than twice their width in pixels (a switch for the benchmark).
+var chartDecimate = true
+
+// paintRangeDecimated draws a chart of many points by pixel column: the
+// line through each column's lowest and highest average (chart.MinMax,
+// so spikes stay), stroked as one polyline, the band as the columns'
+// envelope and the loss bars as each column's worst loss.
+func paintRangeDecimated(p *ui.Painter, plot ui.Rect, m rangeChartModel, probe bool, pxW int, t *ui.Theme) {
+	n := len(m.Pts)
+	yAt := func(v float64) float32 { return plot.Y + plot.H - float32(v/m.YMax)*plot.H }
+	col := func(i int) int { return min(pxW-1, i*pxW/max(1, n-1)) }
+	type column struct {
+		has      bool
+		top, low float32 // band edges, in DIPs
+		loss     float64
+	}
+	cols := make([]column, pxW)
+	xs := make([]float32, n)
+	ys := make([]float32, n)
+	nan := float32(math.NaN())
+	for i, pt := range m.Pts {
+		xs[i] = float32(i) / float32(max(1, n-1))
+		c := &cols[col(i)]
+		c.loss = max(c.loss, pt.LossPct)
+		if !pt.OK {
+			ys[i] = nan
+			continue
+		}
+		ys[i] = yAt(pt.Avg)
+		hi, lo := yAt(pt.Max), yAt(pt.Min)
+		if probe {
+			hi, lo = ys[i], plot.Y+plot.H
+		}
+		if !c.has {
+			c.has, c.top, c.low = true, hi, lo
+		} else {
+			c.top, c.low = min(c.top, hi), max(c.low, lo)
+		}
+	}
+	dx := plot.W / float32(pxW)
+	alpha := float32(0.35)
+	if probe {
+		alpha = 0.22
+	}
+	for k, c := range cols {
+		if c.loss <= 0 {
+			continue
+		}
+		h := float32(c.loss/100) * plot.H
+		if probe {
+			h = plot.H
+		}
+		p.Fill(ui.Rect{X: plot.X + float32(k)*dx, Y: plot.Y + plot.H - h, W: max(dx, 1), H: h}, t.Danger.Alpha(alpha), 0)
+	}
+	// band: runs of columns with points
+	fill := chartAreaFill(t)
+	if !probe {
+		fill = ui.LinearGradient{From: t.Accent.Alpha(0.28), To: t.Accent.Alpha(0.12), Angle: 180}
+	}
+	for k := 0; k < pxW; {
+		if !cols[k].has {
+			k++
+			continue
+		}
+		e := k
+		for e+1 < pxW && cols[e+1].has {
+			e++
+		}
+		var band ui.Path
+		for j := k; j <= e; j++ {
+			x := plot.X + (float32(j)+0.5)*dx
+			if j == k {
+				band.MoveTo(x, cols[j].top)
+			} else {
+				band.LineTo(x, cols[j].top)
+			}
+		}
+		for j := e; j >= k; j-- {
+			band.LineTo(plot.X+(float32(j)+0.5)*dx, cols[j].low)
+		}
+		band.Close()
+		p.FillPathGradient(&band, fill)
+		k = e + 1
+	}
+	rx, ry := chart.MinMax(nil, nil, xs, ys, pxW)
+	line := make([][2]float32, len(rx))
+	for i := range rx {
+		line[i] = [2]float32{plot.X + rx[i]*plot.W, ry[i]}
+	}
+	p.StrokePolyline(line, 1.6, t.Accent)
+}
+
+// chartAreaFill is the fill under a latency line: the accent fading to
+// transparent toward the axis.
+func chartAreaFill(t *ui.Theme) ui.LinearGradient {
+	return ui.LinearGradient{From: t.Accent.Alpha(0.34), To: t.Accent.Alpha(0.02), Angle: 180}
 }
 
 // spanOverlaps reports whether [x0,x1] meets the x extent of r (with a
@@ -445,7 +551,9 @@ func paintCrosshair(p *ui.Painter, r ui.Rect, m rangeChartModel, xh *crosshair, 
 		shadow = ui.RGB(0, 0, 0).Alpha(0.45)
 	}
 	p.Shadow(box, 8, 0, 3, 10, 0, shadow)
-	p.Fill(box, t.Surface.Alpha(0.94), 8)
+	// frosted card: what is under it shows through, blurred (a small area)
+	glass.Blur{Radius: 6}.PaintMaterial(p, box, [4]float32{8, 8, 8, 8})
+	p.Fill(box, t.Surface.Alpha(0.8), 8)
 	p.Stroke(box, t.Border.Alpha(0.8), 8, 1)
 	for k, it := range items {
 		y := by + padY + float32(k)*lineH

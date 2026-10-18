@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	appVersion = "1.2.2"
+	appVersion = "1.2.3"
 
 	// Default window sizes (a saved window-state.json overrides them).
 	mainWinW      = 1460
@@ -71,7 +71,9 @@ func (a *app) viewSidebar(c *ui.Context) {
 	side := ui.Column(c).Width(220).Padding(16, 12).Gap(12).Shrink(0).
 		Background(t.Background).BorderWidth(0, 1, 0, 0).BorderColor(t.Border)
 	side.Children(func() {
-		ui.Column(c).Gap(2).Padding(4, 8).Children(func() {
+		// brand: a faint accent wash, fading to the sidebar
+		ui.Column(c).Gap(2).Padding(10, 10).Radius(10).Border(1, t.Accent.Alpha(0.12)).
+			LinearGradient(ui.LinearGradient{From: t.Accent.Alpha(0.16), To: t.Accent.Alpha(0.02), Angle: 120, Oklab: true}).Children(func() {
 			ui.Text(c, "HinaTracer").FontSize(17).Bold()
 			ui.Text(c, i18n.T("app.subtitle")).FontSize(11).TextColor(t.TextMuted)
 		})
@@ -88,6 +90,45 @@ func (a *app) viewSidebar(c *ui.Context) {
 		}).Grow(1)
 		ui.Text(c, "v"+appVersion).FontSize(10).TextColor(t.TextMuted).Padding(4, 8)
 	})
+}
+
+// detailAction is an export or copy chosen in a detail window's menu.
+type detailAction struct {
+	format string // "" = nothing chosen
+	copy   bool
+}
+
+// detailExportMenu is a detail window's 「导出」 menu: CSV, TXT and
+// Markdown files, and TXT and Markdown to the clipboard.
+func detailExportMenu(c *ui.Context) detailAction {
+	var act detailAction
+	ui.MenuButton(c, i18n.T("detail.export"), func(m *ui.Menu) {
+		for _, it := range []struct {
+			key    string
+			format string
+			copy   bool
+		}{
+			{"history.export.button", "csv", false}, {"history.export.txt", "txt", false}, {"history.export.md", "md", false},
+			{"", "", false},
+			{"copy.txt", "txt", true}, {"copy.md", "md", true},
+		} {
+			if it.key == "" {
+				m.Separator()
+				continue
+			}
+			if m.Item(i18n.T(it.key)).Chosen() {
+				act = detailAction{format: it.format, copy: it.copy}
+			}
+		}
+	})
+	return act
+}
+
+// statusPill is a top-bar status badge: a soft horizontal wash of col
+// with a hairline of it, legible on light and dark.
+func statusPill(c *ui.Context, text string, col ui.Color) ui.Element {
+	return ui.Badge(c, text).TextColor(col).Border(1, col.Alpha(0.28)).
+		LinearGradient(ui.LinearGradient{From: col.Alpha(0.24), To: col.Alpha(0.10), Angle: 90, Oklab: true})
 }
 
 func (a *app) viewTopBar(c *ui.Context) {
@@ -115,7 +156,7 @@ func (a *app) viewTopBar(c *ui.Context) {
 		})
 		ui.Spacer(c)
 		if a.nav == "trace" && a.anyTraceRunning() {
-			ui.Badge(c, i18n.T("badge.tracing")).Background(t.Accent.Alpha(0.15)).TextColor(t.Accent)
+			statusPill(c, i18n.T("badge.tracing"), t.Accent)
 		}
 		if a.notice != "" && time.Since(a.noticeAt) < 8*time.Second {
 			ui.Text(c, a.notice).FontSize(12).TextColor(t.Danger).SingleLine().MinWidth(0)
@@ -126,16 +167,16 @@ func (a *app) viewTopBar(c *ui.Context) {
 			if st != "connected" {
 				col = t.Danger
 			}
-			ui.Badge(c, i18n.T("remote.badge")+" · "+i18n.T("remote.status."+st)).Background(col.Alpha(0.15)).TextColor(col)
+			statusPill(c, i18n.T("remote.badge")+" · "+i18n.T("remote.status."+st), col)
 		}
 		if a.nav == "http" && a.remote == nil && a.httpMgr.Running() {
-			ui.Badge(c, i18n.T("badge.monitoring")).Background(t.Success.Alpha(0.18)).TextColor(t.Success)
+			statusPill(c, i18n.T("badge.monitoring"), t.Success)
 		}
 		if st := a.web.srv.Status(); st.Running {
-			ui.Badge(c, i18n.T("badge.web")).Background(t.Accent.Alpha(0.15)).TextColor(t.Accent)
+			statusPill(c, i18n.T("badge.web"), t.Accent)
 		}
 		if a.nav == "ping" && a.pingMgr.Running() {
-			ui.Badge(c, i18n.T("badge.monitoring")).Background(t.Success.Alpha(0.18)).TextColor(t.Success)
+			statusPill(c, i18n.T("badge.monitoring"), t.Success)
 		}
 	})
 }
@@ -212,6 +253,7 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 	pendingAdd := false
 	pendingStartAll := false
 	pendingStopAll := false
+	var pendingExport traceExportReq
 
 	ro := a.readOnly()
 	pendingMove := [2]int{-1, -1}
@@ -290,6 +332,8 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 						pendingSelect = idx
 					}
 					row.ContextMenu(func(m *ui.Menu) {
+						traceExportMenu(m, ti.ID, &pendingExport)
+						m.Separator()
 						if ro {
 							m.Item(i18n.T("remote.readonly")).Disabled(true)
 							return
@@ -330,6 +374,9 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 		})
 	})
 
+	if pendingExport.set { // guests may export too
+		pendingExport.run(a)
+	}
 	if ro { // guests only switch tabs
 		if pendingSelect >= 0 && pendingSelect < len(a.traceTabs) {
 			a.traceActive = pendingSelect
@@ -425,7 +472,15 @@ func (a *app) viewTraceContent(c *ui.Context) {
 				if tab.isRunning() {
 					ui.Spinner(c)
 				}
+				var req traceExportReq
+				ui.MenuButton(c, i18n.T("trace.export"), func(m *ui.Menu) {
+					traceExportItems(m, tab.ID, &req)
+				})
+				if req.set {
+					req.run(a)
+				}
 			})
+			a.viewRangeBar(c, &a.rangeTrace, "trace", tab.ID, nil)
 			display := a.sortedTraceHops(tab)
 			cols := traceColumns()
 			nRows := len(display)
@@ -438,6 +493,8 @@ func (a *app) viewTraceContent(c *ui.Context) {
 			for i, h := range display {
 				keys[i] = h.TTL
 			}
+			// rows re-sort as samples arrive: keep the scroll offset, not the top row
+			tab.Table.KeepOffset = true
 			tab.Table.Key = func(i int) any {
 				if i >= 0 && i < len(keys) {
 					return keys[i]
@@ -572,6 +629,7 @@ func (a *app) sortedTraceHops(tab *traceTab) []traceHopView {
 	tab.mu.Lock()
 	src := append([]traceHopView(nil), tab.Hops...)
 	tab.mu.Unlock()
+	src = a.rangeOverlayHops(tab, src)
 	n := len(src)
 	if n == 0 {
 		return src
@@ -746,6 +804,11 @@ func (a *app) viewPing(c *ui.Context) {
 
 	card(c, func() {
 		display := a.sortedPingSnaps()
+		keys := pingKeys(display)
+		var exportPick tableExportPick
+		a.viewRangeBar(c, &a.rangePing, "ping", 0, func() {
+			exportPick = tableExportMenu(c, len(display), selectionCount(keys, &a.pingSel, a.pingSelected))
+		})
 		cols := pingColumns()
 		n := len(display)
 		if n == 0 {
@@ -761,7 +824,8 @@ func (a *app) viewPing(c *ui.Context) {
 			a.pingTable.Reorder = nil
 		}
 		a.syncAliasEditsFor(display)
-		keys := pingKeys(display)
+		// rows re-sort as samples arrive: keep the scroll offset, not the top row
+		a.pingTable.KeepOffset = true
 		a.pingTable.Key = func(i int) any {
 			if i >= 0 && i < len(keys) {
 				return keys[i]
@@ -927,6 +991,13 @@ func (a *app) viewPing(c *ui.Context) {
 		})
 		for _, f := range post {
 			f()
+		}
+		if exportPick.set {
+			ks := keys
+			if exportPick.selected {
+				ks = selectedKeys(keys, &a.pingSel, a.pingSelected)
+			}
+			a.runTableExport("ping", exportPick, tableExportQuery(exportPick, arrangedColumnIDs(cols, a.pingTable.Columns), ks, a.pingSort, a.rangePing.activeQuery("ping")))
 		}
 
 		a.viewAliasEditModal(c)
@@ -1124,8 +1195,12 @@ func (a *app) viewPingDetail(c *ui.Context) {
 			if a.detailExportMsg != "" {
 				ui.Text(c, a.detailExportMsg).FontSize(11).TextColor(t.TextMuted).Grow(1).MinWidth(0).Selectable()
 			}
-			if ui.Button(c, i18n.T("history.export.button")).Clicked() {
-				a.exportDetailCSV()
+			if act := detailExportMenu(c); act.format != "" {
+				if act.copy {
+					a.copyDetail(act.format)
+				} else {
+					a.exportDetail(act.format)
+				}
 			}
 			if ui.Button(c, i18n.T("detail.copy_all")).Clicked() {
 				copyText(formatPingDetail(s, loc, iso, region, meta.ASN, meta.ASNISO, meta.ASNRegion, a.pingRDNSOf(s.Host), a.pingIPOf(s), a.detailIsHop, a.detailHopTTL))
@@ -1438,51 +1513,57 @@ func (a *app) pingDBStatus() (loading bool, status string) {
 }
 
 // traceColumns are the table columns (also listed by the copy-column menu).
-func traceColumns() []ui.TableColumn {
+func traceColumns() []ui.TableColumn { return traceColumnsT(i18n.T) }
+
+// traceColumnsT is traceColumns with titles from tr (an export language).
+func traceColumnsT(tr func(string) string) []ui.TableColumn {
 	return []ui.TableColumn{
-		{Title: i18n.T("trace.col.ttl"), ID: "ttl", Width: 56, Align: ui.Center, Sortable: true, Fixed: true},
-		{Title: i18n.T("trace.col.ip"), ID: "ip", Width: 140, Sortable: true},
-		{Title: i18n.T("trace.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
-		{Title: i18n.T("trace.col.location"), ID: "location", Width: 130, Sortable: true},
-		{Title: i18n.T("trace.col.region"), ID: "region", Width: 130, Sortable: true},
-		{Title: i18n.T("trace.col.asn"), ID: "asn", Width: 160, Sortable: true},
-		{Title: i18n.T("trace.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
-		{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
+		{Title: tr("trace.col.ttl"), ID: "ttl", Width: 56, Align: ui.Center, Sortable: true, Fixed: true},
+		{Title: tr("trace.col.ip"), ID: "ip", Width: 140, Sortable: true},
+		{Title: tr("trace.col.rdns"), ID: "rdns", Width: 150, Sortable: true},
+		{Title: tr("trace.col.location"), ID: "location", Width: 130, Sortable: true},
+		{Title: tr("trace.col.region"), ID: "region", Width: 130, Sortable: true},
+		{Title: tr("trace.col.asn"), ID: "asn", Width: 160, Sortable: true},
+		{Title: tr("trace.col.asn_region"), ID: "asn_region", Width: 130, Sortable: true},
+		{Title: tr("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
+		{Title: tr("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
 	}
 }
 
 // pingColumns are the table columns (also listed by the copy-column menu).
-func pingColumns() []ui.TableColumn {
+func pingColumns() []ui.TableColumn { return pingColumnsT(i18n.T) }
+
+// pingColumnsT is pingColumns with titles from tr (an export language).
+func pingColumnsT(tr func(string) string) []ui.TableColumn {
 	return []ui.TableColumn{
-		{Title: i18n.T("ping.col.n"), ID: "#", Width: 44, Align: ui.Center, Sortable: true, Fixed: true},
-		{Title: i18n.T("ping.col.alias"), ID: "alias", Width: 100, Sortable: true},
-		{Title: i18n.T("ping.col.host"), ID: "host", Width: 148, Sortable: true},
-		{Title: i18n.T("ping.col.ip"), ID: "ip", Width: 128, Sortable: true},
-		{Title: i18n.T("ping.col.rdns"), ID: "rdns", Width: 160, Sortable: true},
-		{Title: i18n.T("ping.col.location"), ID: "location", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.region"), ID: "region", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.asn"), ID: "asn", Width: 180, Sortable: true},
-		{Title: i18n.T("ping.col.asn_region"), ID: "asn_region", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
-		{Title: i18n.T("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
-		{Title: i18n.T("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
+		{Title: tr("ping.col.n"), ID: "#", Width: 44, Align: ui.Center, Sortable: true, Fixed: true},
+		{Title: tr("ping.col.alias"), ID: "alias", Width: 100, Sortable: true},
+		{Title: tr("ping.col.host"), ID: "host", Width: 148, Sortable: true},
+		{Title: tr("ping.col.ip"), ID: "ip", Width: 128, Sortable: true},
+		{Title: tr("ping.col.rdns"), ID: "rdns", Width: 160, Sortable: true},
+		{Title: tr("ping.col.location"), ID: "location", Width: 140, Sortable: true},
+		{Title: tr("ping.col.region"), ID: "region", Width: 140, Sortable: true},
+		{Title: tr("ping.col.asn"), ID: "asn", Width: 180, Sortable: true},
+		{Title: tr("ping.col.asn_region"), ID: "asn_region", Width: 140, Sortable: true},
+		{Title: tr("ping.col.success"), ID: "success", Width: 56, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.failure"), ID: "failure", Width: 56, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.rate"), ID: "success_rate", Width: 88, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.loss"), ID: "loss_rate", Width: 80, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.last"), ID: "last", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.avg"), ID: "avg", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.min"), ID: "min", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.max"), ID: "max", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.median"), ID: "median", Width: 72, Align: ui.End, Sortable: true},
+		{Title: tr("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
+		{Title: tr("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
 	}
 }

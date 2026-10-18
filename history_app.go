@@ -127,11 +127,6 @@ func (a *app) kickDetailQuery(force bool) {
 	})
 }
 
-// historyCSV builds the CSV for a ping target or hop. Off the UI thread.
-func (a *app) historyCSV(key, target, alias, ip string, r history.Range) []byte {
-	return historyCSVFrom(a.historySource(), key, target, alias, ip, r)
-}
-
 // historySource queries the local store, or the remote server's in remote
 // mode. Call on the UI thread; the returned func runs anywhere.
 func (a *app) historySource() func(key string, r history.Range, limit int) []history.Point {
@@ -150,25 +145,68 @@ func (a *app) historySource() func(key string, r history.Range, limit int) []his
 	}
 }
 
-func historyCSVFrom(src func(string, history.Range, int) []history.Point, key, target, alias, ip string, r history.Range) []byte {
+// exportFormat normalises a format name: "txt", "md" (also "markdown")
+// or "csv" (the default).
+func exportFormat(f string) string {
+	switch strings.ToLower(strings.TrimSpace(f)) {
+	case "txt":
+		return "txt"
+	case "md", "markdown":
+		return "md"
+	}
+	return "csv"
+}
+
+// validExportFormat reports whether f names a format (empty = default).
+func validExportFormat(f string) bool {
+	switch strings.ToLower(strings.TrimSpace(f)) {
+	case "", "csv", "txt", "md", "markdown":
+		return true
+	}
+	return false
+}
+
+// exportMIME is the Content-Type of an export format.
+func exportMIME(format string) string {
+	switch exportFormat(format) {
+	case "txt":
+		return "text/plain; charset=utf-8"
+	case "md":
+		return "text/markdown; charset=utf-8"
+	}
+	return "text/csv; charset=utf-8"
+}
+
+func historyExportFrom(src func(string, history.Range, int) []history.Point, key, target, alias, ip string, r history.Range, format string) []byte {
 	pts := src(key, r, 100000)
+	switch strings.TrimSpace(ip) { // placeholders of the table, not an address
+	case "…", "—", "*", "-":
+		ip = ""
+	}
 	var buf bytes.Buffer
-	if strings.HasPrefix(key, "http:") {
+	isHTTP := strings.HasPrefix(key, "http:")
+	switch {
+	case exportFormat(format) == "txt":
+		_ = history.TXT(&buf, target, alias, ip, isHTTP, pts)
+	case exportFormat(format) == "md":
+		_ = history.MD(&buf, target, alias, ip, isHTTP, pts)
+	case isHTTP:
 		_ = history.CSVCode(&buf, target, alias, ip, pts)
-	} else {
+	default:
 		_ = history.CSV(&buf, target, alias, ip, pts)
 	}
 	return buf.Bytes()
 }
 
-func csvFileName(target string, r history.Range) string {
+// historyFileName names a history export: hinatracer-<target>-<range>-<time>.<csv|txt>.
+func historyFileName(target string, r history.Range, format string) string {
 	clean := strings.Map(func(c rune) rune {
 		if c == '.' || c == '-' || c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' {
 			return c
 		}
 		return '_'
 	}, target)
-	return fmt.Sprintf("hinatracer-%s-%s-%s.csv", clean, r, time.Now().Format("20060102-150405"))
+	return fmt.Sprintf("hinatracer-%s-%s-%s.%s", clean, r, time.Now().Format("20060102-150405"), exportFormat(format))
 }
 
 // saveDialog asks where to save; replaced in tests. "" = canceled.
@@ -185,36 +223,39 @@ func downloadsDir() string {
 	return os.TempDir()
 }
 
-// exportDetailCSV saves the detail chart's data (UI thread: collects what it
-// needs, then works in the background).
-func (a *app) exportDetailCSV() {
+// exportDetail saves the detail chart's data as CSV or TXT (UI thread:
+// collects what it needs, then works in the background).
+func (a *app) exportDetail(format string) {
 	r := chartRanges[max(0, min(a.detailRange, len(chartRanges)-1))]
 	key, target, alias := a.detailKey(), a.detailSnap.Host, a.detailSnap.Alias
 	ip := a.pingIPOf(a.detailSnap)
 	a.detailExportMsg = i18n.T("history.export.working")
 	src := a.historySource()
 	safeGo("history.export", func() {
-		data := historyCSVFrom(src, key, target, alias, ip, r)
-		name := csvFileName(target, r)
-		path, err := saveDialog(name)
-		if err != nil || path == "" && err == nil {
-			if err == nil { // canceled
-				_ = a.run(func() { a.detailExportMsg = ""; a.redrawDetail() })
-				return
-			}
-			path = filepath.Join(downloadsDir(), name)
-		}
-		werr := os.WriteFile(path, data, 0o644)
-		_ = a.run(func() {
-			if werr != nil {
-				a.detailExportMsg = i18n.Tf("history.export.failed", werr.Error())
-			} else {
-				a.detailExportMsg = i18n.Tf("history.export.saved", path)
-			}
-			a.redrawDetail()
-		})
+		data := historyExportFrom(src, key, target, alias, ip, r, format)
+		msg := saveExportFile(historyFileName(target, r, format), data)
+		_ = a.run(func() { a.detailExportMsg = msg; a.redrawDetail() })
 	})
 }
+
+// copyDetailTXT copies the same TXT as 「导出 TXT」 to the clipboard.
+func (a *app) copyDetailTXT() { a.copyDetail("txt") }
+
+// copyDetail copies the same text as the TXT or Markdown export to the
+// clipboard.
+func (a *app) copyDetail(format string) {
+	r := chartRanges[max(0, min(a.detailRange, len(chartRanges)-1))]
+	key, target, alias := a.detailKey(), a.detailSnap.Host, a.detailSnap.Alias
+	ip := a.pingIPOf(a.detailSnap)
+	a.detailExportMsg = i18n.T("history.export.working")
+	src := a.historySource()
+	a.copyFetched(func() ([]byte, error) {
+		return historyExportFrom(src, key, target, alias, ip, r, format), nil
+	}, func(msg string) { a.detailExportMsg = msg; a.redrawDetail() })
+}
+
+// exportDetailCSV is exportDetail("csv").
+func (a *app) exportDetailCSV() { a.exportDetail("csv") }
 
 func crashLogf(format string, args ...any) { log.Printf(format, args...) }
 
