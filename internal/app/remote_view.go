@@ -54,6 +54,7 @@ func (a *app) enterRemote(rc *remoteClient) {
 		m.savedRows = a.lookupRows
 		a.lookupMu.Unlock()
 	}
+	a.closeTrends() // their targets belong to the other side
 	a.remote = rc
 	a.resetRemoteMirror()
 	a.pingMgr = newRemotePing(rc)
@@ -93,6 +94,7 @@ func (a *app) leaveRemote() {
 		a.detailWin.Close()
 		a.detailWin = nil
 	}
+	a.closeTrends()
 	a.cfg.RemoteMode = false
 	a.persist()
 }
@@ -297,6 +299,7 @@ func (a *app) dropRemote() {
 // quitCleanup releases this client's resources when the app quits. Only
 // this computer's engines stop: a remote server keeps monitoring.
 func (a *app) quitCleanup() {
+	a.closeTrends()
 	a.stopLocalEngines()
 	a.dropRemote()
 	if a.hist != nil {

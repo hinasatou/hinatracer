@@ -375,6 +375,6 @@ func TestRemoteBackend(t *testing.T) {
 // inline on that goroutine).
 func quietHTTPDetail(a *app) {
 	h := &a.http
-	h.ptsFor = itoa(h.detailID) + "|" + string(chartRanges[h.rng])
+	h.ptsFor = feedWant(chartRef{Kind: "http", HTTPID: h.detailID}, chartRanges[h.rng], &a.rangeHTTP)
 	h.queryAt = time.Now()
 }

@@ -104,21 +104,12 @@ func paintLatencyChart(p *ui.Painter, r ui.Rect, m latencyChartModel, t *ui.Them
 		p.Text(plot.X+(plot.W-ew)/2, plot.Y+plot.H/2-7, i18n.T("chart.empty"), 12, muted)
 		return
 	}
-	step := plot.W
-	if n > 1 {
-		step = plot.W / float32(n-1)
-	}
-	xAt := func(i int) float32 {
-		if n == 1 {
-			return plot.X + plot.W
-		}
-		return plot.X + float32(i)*step
-	}
+	xAt := func(i int) float32 { return chartX(plot, i, n) }
 	yAt := func(v float64) float32 {
 		return plot.Y + plot.H - float32(v/m.YMax)*plot.H
 	}
 	// lost probes: red band over the full height
-	bw := float32(math.Max(2, float64(step)*0.6))
+	bw := chartBarW(plot.W, n)
 	for i, v := range m.Vals {
 		if v == pinger.HistoryLost {
 			x := xAt(i)

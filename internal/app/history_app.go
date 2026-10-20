@@ -97,35 +97,43 @@ func (a *app) detailKey() string {
 	return histKeyPing(a.detailSnap.Host)
 }
 
-// kickDetailQuery reloads the aggregated chart in the background (at most
+// detailRef is what the details window charts.
+func (a *app) detailRef() chartRef {
+	if a.detailIsHop {
+		return chartRef{Kind: "hop", Tab: a.detailHopTab, TTL: a.detailHopTTL}
+	}
+	return chartRef{Kind: "ping", Host: a.detailSnap.Host}
+}
+
+// detailFilter is the time filter of the table the details came from.
+func (a *app) detailFilter() *rangeFilter {
+	if a.detailIsHop {
+		return &a.rangeTrace
+	}
+	return &a.rangePing
+}
+
+func (a *app) detailFeedPtrs() feedPtrs {
+	return feedPtrs{&a.detailRange, &a.detailPts, &a.detailPtsFor, &a.detailWantQ, &a.detailQuerying, &a.detailQueryAt, &a.detailMore, &a.detailOlder, &a.detailView}
+}
+
+// detailWant is what the detail chart's points must be for.
+func (a *app) detailWant() string {
+	rng := chartRanges[max(0, min(a.detailRange, len(chartRanges)-1))]
+	return feedWant(a.detailRef(), rng, a.detailFilter())
+}
+
+// kickDetailQuery reloads the detail chart in the background (at most
 // once a second, or at once when the key/range changed). UI thread only.
 func (a *app) kickDetailQuery(force bool) {
-	if a.detailRange < 0 || a.detailRange >= len(chartRanges) || a.hist == nil && a.remote == nil {
+	if a.detailRange < 0 || a.detailRange >= len(chartRanges) {
 		return
 	}
-	key := a.detailKey()
-	want := key + "|" + string(chartRanges[a.detailRange])
-	if !force && want == a.detailPtsFor && time.Since(a.detailQueryAt) < time.Second {
-		return
-	}
-	if a.detailQuerying {
-		return
-	}
-	a.detailQuerying, a.detailQueryAt = true, time.Now()
-	r := chartRanges[a.detailRange]
-	src := a.historySource()
-	safeGo("history.query", func() {
-		pts := src(key, r, chartSamples)
-		_ = a.run(func() {
-			a.detailQuerying = false
-			if a.detailKey()+"|"+string(chartRanges[a.detailRange]) != want {
-				return // switched meanwhile; the next refresh asks again
-			}
-			a.detailPts, a.detailPtsFor = pts, want
-			a.redrawDetail()
-		})
-	})
+	a.kickFeed(a.detailFeedPtrs(), a.detailRef(), a.detailFilter(), force, a.redrawDetail)
 }
+
+// kickDetailOlder loads what precedes the loaded points (the view asked).
+func (a *app) kickDetailOlder() { a.kickDetailQuery(false) }
 
 // historySource queries the local store, or the remote server's in remote
 // mode. Call on the UI thread; the returned func runs anywhere.

@@ -453,7 +453,8 @@ func (s *Store) maintainLocked() {
 	st, _ := tx.Prepare(`INSERT INTO rollups(key,kind,ts,n,lost,sum,min,max) VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(key,kind,ts) DO UPDATE SET
 			n=n+excluded.n, lost=lost+excluded.lost, sum=sum+excluded.sum,
-			min=MIN(min,excluded.min), max=MAX(max,excluded.max)`)
+			min=CASE WHEN n=lost THEN excluded.min WHEN excluded.n=excluded.lost THEN min ELSE MIN(min,excluded.min) END,
+			max=CASE WHEN n=lost THEN excluded.max WHEN excluded.n=excluded.lost THEN max ELSE MAX(max,excluded.max) END`)
 	for k, a := range mins {
 		parts := strings.SplitN(k, "|", 2)
 		ts, _ := parseI64(parts[1])
@@ -511,6 +512,9 @@ func (s *Store) rollupKindLocked(from, to string, olderThan, bucketMs int64) {
 		a.n += n
 		a.lost += lost
 		a.sum += sum
+		if n == lost {
+			continue // all lost: its min/max are placeholders
+		}
 		if min < a.min {
 			a.min = min
 		}
@@ -527,7 +531,8 @@ func (s *Store) rollupKindLocked(from, to string, olderThan, bucketMs int64) {
 	st, _ := tx.Prepare(`INSERT INTO rollups(key,kind,ts,n,lost,sum,min,max) VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(key,kind,ts) DO UPDATE SET
 			n=n+excluded.n, lost=lost+excluded.lost, sum=sum+excluded.sum,
-			min=MIN(min,excluded.min), max=MAX(max,excluded.max)`)
+			min=CASE WHEN n=lost THEN excluded.min WHEN excluded.n=excluded.lost THEN min ELSE MIN(min,excluded.min) END,
+			max=CASE WHEN n=lost THEN excluded.max WHEN excluded.n=excluded.lost THEN max ELSE MAX(max,excluded.max) END`)
 	for k, a := range out {
 		parts := strings.SplitN(k, "|", 2)
 		ts, _ := parseI64(parts[1])
@@ -540,6 +545,29 @@ func (s *Store) rollupKindLocked(from, to string, olderThan, bucketMs int64) {
 	_ = st.Close()
 	_, _ = tx.Exec(`DELETE FROM rollups WHERE kind=? AND ts < ?`, from, olderThan)
 	_ = tx.Commit()
+}
+
+// QueryRange is Query of the points (buckets by their start) in
+// [from, to); a zero bound is open. The last limit points are kept.
+func (s *Store) QueryRange(key string, r Range, from, to time.Time, limit int) []Point {
+	if from.IsZero() && to.IsZero() {
+		return s.Query(key, r, limit)
+	}
+	if limit <= 0 {
+		limit = 300
+	}
+	all := s.Query(key, r, math.MaxInt32)
+	out := all[:0:0]
+	for _, p := range all {
+		if (!from.IsZero() && p.At.Before(from)) || (!to.IsZero() && !p.At.Before(to)) {
+			continue
+		}
+		out = append(out, p)
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out
 }
 
 // Query builds chart points for key over range. Safe from any goroutine;
@@ -556,31 +584,14 @@ func (s *Store) Query(key string, r Range, limit int) []Point {
 	case RangeProbe:
 		return pointsFromSamples(mem, limit)
 	case RangeMinute, RangeHour, RangeDay, RangeWeek, RangeMonth:
-		bucket := bucketDur(r)
 		if enabled && db != nil {
 			if pts := s.queryDB(key, r, limit); len(pts) > 0 {
 				return pts
 			}
 		}
-		return aggregate(mem, bucket, limit)
+		return rebucketRange(pointsFromSamples(mem, len(mem)), r, limit)
 	}
 	return pointsFromSamples(mem, limit)
-}
-
-func bucketDur(r Range) time.Duration {
-	switch r {
-	case RangeMinute:
-		return time.Minute
-	case RangeHour:
-		return time.Hour
-	case RangeDay:
-		return 24 * time.Hour
-	case RangeWeek:
-		return 7 * 24 * time.Hour
-	case RangeMonth:
-		return 30 * 24 * time.Hour
-	}
-	return 0
 }
 
 func pointsFromSamples(sm []Sample, limit int) []Point {
@@ -600,59 +611,23 @@ func pointsFromSamples(sm []Sample, limit int) []Point {
 	return out
 }
 
-func aggregate(sm []Sample, bucket time.Duration, limit int) []Point {
-	if bucket <= 0 || len(sm) == 0 {
-		return nil
+// queryTiers lists, for a chart range, the stored tiers whose buckets are
+// no coarser than the range's (finest last). Samples move from raw to
+// minute (after rawKeepHours), minute to hour (after 14 days) and hour to
+// day (after a third of the retention); each sample lives in exactly one
+// tier, so a range is built from all of them without double counting.
+func queryTiers(r Range) []string {
+	switch r {
+	case RangeMinute:
+		return []string{"minute"}
+	case RangeHour:
+		return []string{"hour", "minute"}
 	}
-	type acc struct {
-		at            time.Time
-		n, lost       int
-		sum, min, max float64
-	}
-	m := map[int64]*acc{}
-	var keys []int64
-	for _, x := range sm {
-		ts := x.At.UnixMilli()
-		b := (ts / int64(bucket/time.Millisecond)) * int64(bucket/time.Millisecond)
-		a := m[b]
-		if a == nil {
-			a = &acc{at: time.UnixMilli(b), min: math.Inf(1), max: math.Inf(-1)}
-			m[b] = a
-			keys = append(keys, b)
-		}
-		a.n++
-		if x.Ms < 0 {
-			a.lost++
-		} else {
-			a.sum += x.Ms
-			if x.Ms < a.min {
-				a.min = x.Ms
-			}
-			if x.Ms > a.max {
-				a.max = x.Ms
-			}
-		}
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	if len(keys) > limit {
-		keys = keys[len(keys)-limit:]
-	}
-	out := make([]Point, 0, len(keys))
-	for _, k := range keys {
-		a := m[k]
-		p := Point{At: a.at, Samples: a.n, Lost: a.lost}
-		if a.n > 0 {
-			p.LossPct = 100 * float64(a.lost) / float64(a.n)
-		}
-		ok := a.n - a.lost
-		if ok > 0 {
-			p.Avg, p.Min, p.Max, p.OK = a.sum/float64(ok), a.min, a.max, true
-		}
-		out = append(out, p)
-	}
-	return out
+	return []string{"day", "hour", "minute"}
 }
 
+// queryDB builds key's chart points for r from every stored tier plus the
+// raw samples (rolled up to minutes in SQL), bucketed by local time.
 func (s *Store) queryDB(key string, r Range, limit int) []Point {
 	s.mu.Lock()
 	db := s.db
@@ -660,149 +635,89 @@ func (s *Store) queryDB(key string, r Range, limit int) []Point {
 	if db == nil {
 		return nil
 	}
-	kind := string(r)
-	if r == RangeWeek || r == RangeMonth {
-		// build from day rollups (or hours) in Go
-		rows, err := db.Query(`SELECT ts,n,lost,sum,min,max FROM rollups WHERE key=? AND kind='day' ORDER BY ts`, key)
-		if err != nil {
-			return nil
-		}
-		defer rows.Close() // also after a panic
-		// Better: fetch as Points then re-bucket
-		var pts []Point
-		for rows.Next() {
-			var ts int64
-			var n, lost int
-			var sum, min, max float64
-			if err := rows.Scan(&ts, &n, &lost, &sum, &min, &max); err != nil {
-				continue
-			}
-			p := Point{At: time.UnixMilli(ts), Samples: n, Lost: lost, Min: min, Max: max}
-			if n > 0 {
-				p.LossPct = 100 * float64(lost) / float64(n)
-			}
-			ok := n - lost
-			if ok > 0 {
-				p.Avg, p.OK = sum/float64(ok), true
-			}
-			pts = append(pts, p)
-		}
-		_ = rows.Close()
-		return rebucket(pts, bucketDur(r), limit)
+	var pts []Point
+	for _, kind := range queryTiers(r) {
+		pts = append(pts, queryRollups(db, key, kind)...)
 	}
-	if r == RangeMinute {
-		// merge rollup minutes + recent raw samples
-		rows, err := db.Query(`SELECT ts,n,lost,sum,min,max FROM rollups WHERE key=? AND kind='minute' ORDER BY ts`, key)
-		var pts []Point
-		if err == nil {
-			defer rows.Close() // also after a panic
-			for rows.Next() {
-				var ts int64
-				var n, lost int
-				var sum, min, max float64
-				if err := rows.Scan(&ts, &n, &lost, &sum, &min, &max); err != nil {
-					continue
-				}
-				p := Point{At: time.UnixMilli(ts), Samples: n, Lost: lost, Min: min, Max: max}
-				if n > 0 {
-					p.LossPct = 100 * float64(lost) / float64(n)
-				}
-				ok := n - lost
-				if ok > 0 {
-					p.Avg, p.OK = sum/float64(ok), true
-				}
-				pts = append(pts, p)
-			}
-			_ = rows.Close()
-		}
-		raw, _ := db.Query(`SELECT ts,ms FROM samples WHERE key=? ORDER BY ts`, key)
-		var sm []Sample
-		if raw != nil {
-			defer raw.Close() // also after a panic
-			for raw.Next() {
-				var ts int64
-				var ms float64
-				if raw.Scan(&ts, &ms) == nil {
-					sm = append(sm, Sample{At: time.UnixMilli(ts), Ms: ms})
-				}
-			}
-			_ = raw.Close()
-		}
-		pts = append(pts, aggregate(sm, time.Minute, limit)...)
-		sort.Slice(pts, func(i, j int) bool { return pts[i].At.Before(pts[j].At) })
-		// merge same-minute buckets
-		pts = mergeSame(pts)
-		if len(pts) > limit {
-			pts = pts[len(pts)-limit:]
-		}
-		return pts
+	pts = append(pts, queryRawMinutes(db, key)...)
+	return rebucketRange(pts, r, limit)
+}
+
+func pointFromBucket(ts int64, n, lost int, sum, min, max float64) Point {
+	p := Point{At: time.UnixMilli(ts), Samples: n, Lost: lost}
+	if n > 0 {
+		p.LossPct = 100 * float64(lost) / float64(n)
 	}
+	if ok := n - lost; ok > 0 {
+		p.Avg, p.Min, p.Max, p.OK = sum/float64(ok), min, max, true
+	}
+	return p
+}
+
+func queryRollups(db *sql.DB, key, kind string) []Point {
 	rows, err := db.Query(`SELECT ts,n,lost,sum,min,max FROM rollups WHERE key=? AND kind=? ORDER BY ts`, key, kind)
 	if err != nil {
 		return nil
 	}
-	defer rows.Close()
+	defer rows.Close() // also after a panic (the store has one connection)
 	var pts []Point
 	for rows.Next() {
 		var ts int64
 		var n, lost int
 		var sum, min, max float64
-		if err := rows.Scan(&ts, &n, &lost, &sum, &min, &max); err != nil {
-			continue
+		if rows.Scan(&ts, &n, &lost, &sum, &min, &max) == nil {
+			pts = append(pts, pointFromBucket(ts, n, lost, sum, min, max))
 		}
-		p := Point{At: time.UnixMilli(ts), Samples: n, Lost: lost, Min: min, Max: max}
-		if n > 0 {
-			p.LossPct = 100 * float64(lost) / float64(n)
-		}
-		ok := n - lost
-		if ok > 0 {
-			p.Avg, p.OK = sum/float64(ok), true
-		}
-		pts = append(pts, p)
-	}
-	if len(pts) > limit {
-		pts = pts[len(pts)-limit:]
 	}
 	return pts
 }
 
-func mergeSame(pts []Point) []Point {
-	if len(pts) == 0 {
-		return pts
+// queryRawMinutes returns key's raw samples as minute buckets.
+func queryRawMinutes(db *sql.DB, key string) []Point {
+	rows, err := db.Query(`SELECT (ts/60000)*60000 AS b, COUNT(*),
+			SUM(CASE WHEN ms < 0 THEN 1 ELSE 0 END),
+			SUM(CASE WHEN ms >= 0 THEN ms ELSE 0 END),
+			MIN(CASE WHEN ms >= 0 THEN ms END), MAX(CASE WHEN ms >= 0 THEN ms END)
+		FROM samples WHERE key=? GROUP BY b ORDER BY b`, key)
+	if err != nil {
+		return nil
 	}
-	out := []Point{pts[0]}
-	for _, p := range pts[1:] {
-		last := &out[len(out)-1]
-		if last.At.Equal(p.At) {
-			n := last.Samples + p.Samples
-			lost := last.Lost + p.Lost
-			sum := last.Avg*float64(last.Samples-last.Lost) + p.Avg*float64(p.Samples-p.Lost)
-			ok := n - lost
-			last.Samples, last.Lost = n, lost
-			if n > 0 {
-				last.LossPct = 100 * float64(lost) / float64(n)
-			}
-			if ok > 0 {
-				last.Avg = sum / float64(ok)
-				if !last.OK || p.Min < last.Min {
-					last.Min = p.Min
-				}
-				if !last.OK || p.Max > last.Max {
-					last.Max = p.Max
-				}
-				last.OK = true
-			}
-			continue
+	defer rows.Close() // also after a panic (the store has one connection)
+	var pts []Point
+	for rows.Next() {
+		var ts int64
+		var n, lost int
+		var sum float64
+		var min, max sql.NullFloat64
+		if rows.Scan(&ts, &n, &lost, &sum, &min, &max) == nil {
+			pts = append(pts, pointFromBucket(ts, n, lost, sum, min.Float64, max.Float64))
 		}
-		out = append(out, p)
 	}
-	return out
+	return pts
 }
 
-func rebucket(pts []Point, bucket time.Duration, limit int) []Point {
-	if bucket <= 0 || len(pts) == 0 {
-		return pts
+// bucketStart is the start of the chart bucket of r holding t: whole
+// minutes, and local hours, days, weeks (from Monday) and calendar months.
+func bucketStart(t time.Time, r Range) time.Time {
+	t = t.In(time.Local)
+	y, mo, d := t.Date()
+	switch r {
+	case RangeMinute:
+		return t.Truncate(time.Minute)
+	case RangeHour:
+		return time.Date(y, mo, d, t.Hour(), 0, 0, 0, time.Local)
+	case RangeDay:
+		return time.Date(y, mo, d, 0, 0, 0, 0, time.Local)
+	case RangeWeek:
+		return time.Date(y, mo, d-(int(t.Weekday())+6)%7, 0, 0, 0, 0, time.Local)
+	case RangeMonth:
+		return time.Date(y, mo, 1, 0, 0, 0, 0, time.Local)
 	}
+	return t
+}
+
+// rebucketRange merges points into r's buckets (sorted, the last limit).
+func rebucketRange(pts []Point, r Range, limit int) []Point {
 	type acc struct {
 		at            time.Time
 		n, lost       int
@@ -810,44 +725,32 @@ func rebucket(pts []Point, bucket time.Duration, limit int) []Point {
 	}
 	m := map[int64]*acc{}
 	var keys []int64
-	bm := int64(bucket / time.Millisecond)
 	for _, p := range pts {
-		ts := p.At.UnixMilli()
-		b := (ts / bm) * bm
+		at := bucketStart(p.At, r)
+		b := at.UnixMilli()
 		a := m[b]
 		if a == nil {
-			a = &acc{at: time.UnixMilli(b), min: math.Inf(1), max: math.Inf(-1)}
+			a = &acc{at: at, min: math.Inf(1), max: math.Inf(-1)}
 			m[b] = a
 			keys = append(keys, b)
 		}
 		a.n += p.Samples
 		a.lost += p.Lost
-		ok := p.Samples - p.Lost
-		if ok > 0 {
+		if ok := p.Samples - p.Lost; ok > 0 {
 			a.sum += p.Avg * float64(ok)
-			if p.Min < a.min {
-				a.min = p.Min
-			}
-			if p.Max > a.max {
-				a.max = p.Max
-			}
+			a.min = math.Min(a.min, p.Min)
+			a.max = math.Max(a.max, p.Max)
 		}
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	if len(keys) > limit {
+	if limit > 0 && len(keys) > limit {
 		keys = keys[len(keys)-limit:]
 	}
 	out := make([]Point, 0, len(keys))
 	for _, k := range keys {
 		a := m[k]
-		p := Point{At: a.at, Samples: a.n, Lost: a.lost}
-		if a.n > 0 {
-			p.LossPct = 100 * float64(a.lost) / float64(a.n)
-		}
-		ok := a.n - a.lost
-		if ok > 0 {
-			p.Avg, p.Min, p.Max, p.OK = a.sum/float64(ok), a.min, a.max, true
-		}
+		p := pointFromBucket(k, a.n, a.lost, a.sum, a.min, a.max)
+		p.At = a.at
 		out = append(out, p)
 	}
 	return out

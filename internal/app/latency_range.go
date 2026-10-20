@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
@@ -15,18 +16,37 @@ import (
 
 // rangeChartModel is what the latency chart draws for every range: probes
 // (按次) as a line with lost probes marked, aggregated buckets as an avg
-// line, a min–max band and loss% bars.
+// line, a min–max band and loss% bars, on a time axis over [T0, T1].
 type rangeChartModel struct {
 	Pts   []history.Point
 	Range history.Range
 	YMax  float64
 	Lost  int
+	TS    []int64 // each point's axis time (unix ms)
+	Brk   []bool  // a gap (no data) before the point
+	Ax    chartAxis
+	T0    int64
+	T1    int64
+	I0    int // visible points: Pts[I0:I1]
+	I1    int
 }
 
+// makeRangeChart lays pts out over all their time (no filter, no view).
 func makeRangeChart(pts []history.Point, r history.Range) rangeChartModel {
+	v := chartView{Span: math.MaxInt64 / 4}
+	return makeRangeChartView(pts, r, time.Time{}, time.Time{}, time.Now(), &v)
+}
+
+// makeRangeChartView lays pts out in v's window; from/to is the time
+// filter (zero = open), now the live edge.
+func makeRangeChartView(pts []history.Point, r history.Range, from, to, now time.Time, v *chartView) rangeChartModel {
 	m := rangeChartModel{Pts: pts, Range: r}
+	m.TS, m.Brk, m.Ax = layoutTimes(pts, r, from, to, now)
+	m.T0, m.T1 = v.window(m.Ax)
+	m.I0, m.I1 = visibleRange(m.TS, m.T0, m.T1, m.Ax.Bucket)
 	top := 0.0
-	for _, p := range pts {
+	for i := m.I0; i < m.I1; i++ {
+		p := pts[i]
 		if p.OK {
 			top = math.Max(top, p.Max)
 		}
@@ -34,6 +54,32 @@ func makeRangeChart(pts []history.Point, r history.Range) rangeChartModel {
 	}
 	m.YMax = niceCeil(top * 1.1)
 	return m
+}
+
+// xOf is the x of axis time t on plot.
+func (m *rangeChartModel) xOf(plot ui.Rect, t int64) float32 {
+	if m.T1 <= m.T0 {
+		return plot.X + plot.W/2
+	}
+	return plot.X + float32(float64(t-m.T0)/float64(m.T1-m.T0))*plot.W
+}
+
+// pxPerMs is the plot's scale.
+func (m *rangeChartModel) pxPerMs(plot ui.Rect) float64 {
+	if m.T1 <= m.T0 {
+		return 0
+	}
+	return float64(plot.W) / float64(m.T1-m.T0)
+}
+
+// barW is a loss bar's width: most of a bucket (probes: of their
+// spacing), capped.
+func (m *rangeChartModel) barW(plot ui.Rect) float32 {
+	f := 0.7
+	if m.Range == history.RangeProbe {
+		f = 0.6
+	}
+	return max(2, min(chartMaxBarW, float32(float64(m.Ax.Bucket)*m.pxPerMs(plot)*f)))
 }
 
 // histPoints turns a Stats.History (no times) into probe points.
@@ -67,6 +113,28 @@ func bucketTimeFmt(r history.Range) string {
 	default:
 		return "2006-01-02"
 	}
+}
+
+// chartMaxBarW caps a loss bar's width, so a chart of a few buckets
+// does not draw blocks spanning half the plot.
+const chartMaxBarW = 24
+
+// chartX is the x of point i of n spread evenly over plot; a single point
+// sits in the middle (its bar and label then match it).
+func chartX(plot ui.Rect, i, n int) float32 {
+	if n <= 1 {
+		return plot.X + plot.W/2
+	}
+	return plot.X + float32(i)*plot.W/float32(n-1)
+}
+
+// chartBarW is the loss-bar width for n points over plotW.
+func chartBarW(plotW float32, n int) float32 {
+	step := plotW
+	if n > 1 {
+		step = plotW / float32(n-1)
+	}
+	return max(2, min(chartMaxBarW, step*0.6))
 }
 
 // chartNearest is the index of the point nearest to px (0..plotW) for n
@@ -147,7 +215,7 @@ func fmtAxisMs2(v float64) string {
 // reads a.detailPts (filled by kickDetailQuery in the background).
 func (a *app) latencyChartView(c *ui.Context, hist []float64) {
 	rng := chartRanges[max(0, min(a.detailRange, len(chartRanges)-1))]
-	want := a.detailKey() + "|" + string(rng)
+	want := a.detailWant()
 	var pts []history.Point
 	loading := a.detailPtsFor != want
 	if !loading {
@@ -155,52 +223,205 @@ func (a *app) latencyChartView(c *ui.Context, hist []float64) {
 	} else if rng == history.RangeProbe {
 		pts, loading = histPoints(hist), false
 	}
-	if a.rangeChart(c, &a.detailRange, pts, rng, loading) {
+	var from, to time.Time
+	if f := a.detailFilter(); f.active() {
+		from, to, _ = f.bounds(time.Now())
+	}
+	a.detailView.reset(want)
+	o := chartOpts{view: &a.detailView, from: from, to: to, more: a.detailMore, onPop: a.popDetailTrend}
+	if a.rangeChart(c, &a.detailRange, pts, rng, loading, o) {
 		a.kickDetailQuery(true)
+	}
+	if a.detailView.WantOlder {
+		a.kickDetailOlder()
 	}
 }
 
+// chartOpts are a range chart's view and time filter.
+type chartOpts struct {
+	view     *chartView // pan and zoom (nil: the default window)
+	from, to time.Time  // time filter, zero = open
+	more     bool       // older data than the loaded may exist
+	onPop    func()     // shows the open-in-window button
+	height   float32    // of the plot (0 = 150)
+	hint     bool       // shows the navigation keys under the chart
+}
+
 // rangeChart draws the selector and chart; it reports a range change.
-func (a *app) rangeChart(c *ui.Context, sel *int, pts []history.Point, rng history.Range, loading bool) bool {
+// The chart takes the arrows, Home and End while it has the keyboard
+// focus (a click on it), the wheel and drags while the pointer is on it.
+func (a *app) rangeChart(c *ui.Context, sel *int, pts []history.Point, rng history.Range, loading bool, o chartOpts) bool {
 	t := c.Theme()
 	prev := *sel
-	m := makeRangeChart(pts, rng)
-	ui.Column(c).Gap(6).MinWidth(0).Children(func() {
+	v := o.view
+	if v == nil {
+		v = &chartView{hoverFrac: -1}
+	}
+	m := makeRangeChartView(pts, rng, o.from, o.to, time.Now(), v)
+	m.Ax.More = o.more
+	v.ax = m.Ax
+	h := o.height
+	if h == 0 {
+		h = 150
+	}
+	ui.Column(c).Gap(6).MinWidth(0).Grow(1).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
 			ui.Text(c, i18n.T("chart.title")).FontSize(13).Bold()
 			ui.Spacer(c)
+			if v.Panned {
+				if ui.Button(c, i18n.T("chart.latest")).Padding(3, 8).FontSize(12).Tooltip(i18n.T("chart.latest.tip")).Clicked() {
+					v.end()
+				}
+			}
 			ui.Segmented(c, sel, chartRangeLabels()...)
+			if o.onPop != nil {
+				pop := ui.Button(c, "").Label(i18n.T("chart.pop")).Tooltip(i18n.T("chart.pop")).Padding(6, 7)
+				pop.Children(func() {
+					ui.Box(c).Width(14).Height(14).Draw(func(p *ui.Painter, r ui.Rect) { paintPopIcon(p, r, t.Text) })
+				})
+				if pop.Clicked() {
+					o.onPop()
+				}
+			}
 		})
 		var hx, hy float32
 		var hov bool
-		el := ui.Column(c).Height(150).MinWidth(0).Radius(8).Background(t.Surface).Border(1, t.Border).
-			Draw(func(p *ui.Painter, r ui.Rect) {
-				var pill ui.Rect
-				var xh *crosshair
-				if hov {
-					xh = makeCrosshair(p, r, m, hx, hy)
-					if xh != nil {
-						pill = xh.timePill
-					}
-				}
-				paintRangeChart(p, r, m, loading, t, pill)
+		el := ui.Column(c).MinWidth(0).Radius(8).Background(t.Surface).Border(1, t.Border).
+			Focusable().FocusRing(false).Label(i18n.T("chart.title")).
+			HandleInput(func(ev ui.InputEvent) bool { return chartInput(v, ev) })
+		if h < 0 {
+			el.Grow(1).MinHeight(220)
+		} else {
+			el.Height(h)
+		}
+		if v.focusReq {
+			v.focusReq = false
+			el.Focus()
+		}
+		focused := el.Focused()
+		el.Draw(func(p *ui.Painter, r ui.Rect) {
+			v.plotX, v.plotW = chartPadL, r.W-chartPadL-chartPadR
+			var pill ui.Rect
+			var xh *crosshair
+			if hov {
+				xh = makeCrosshair(p, r, m, hx, hy)
 				if xh != nil {
-					paintCrosshair(p, r, m, xh, t)
+					pill = xh.timePill
 				}
-			})
+			}
+			paintRangeChart(p, r, m, loading, t, pill)
+			if xh != nil {
+				paintCrosshair(p, r, m, xh, t)
+			}
+			if focused {
+				p.Stroke(r, t.Accent.Alpha(0.55), 8, 1.5)
+			}
+		})
 		hx, hy, hov = el.PointerPosition()
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+		v.hoverFrac = -1
+		if hov && v.plotW > 0 {
+			v.hoverFrac = float64((hx - v.plotX) / v.plotW)
+		}
+		ui.Row(c).Gap(12).AlignItems(ui.Center).MinWidth(0).Children(func() {
 			if rng == history.RangeProbe {
 				if m.Lost > 0 {
 					ui.Text(c, i18n.Tf("chart.lost", m.Lost)).FontSize(11).TextColor(t.Danger)
 				}
-				return
+			} else {
+				ui.Text(c, i18n.T("chart.legend.band")).FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, i18n.T("chart.legend.loss")).FontSize(11).TextColor(t.Danger)
 			}
-			ui.Text(c, i18n.T("chart.legend.band")).FontSize(11).TextColor(t.TextMuted)
-			ui.Text(c, i18n.T("chart.legend.loss")).FontSize(11).TextColor(t.Danger)
+			if o.hint {
+				ui.Spacer(c)
+				ui.Text(c, i18n.T("chart.nav.hint")).FontSize(11).TextColor(t.TextMuted).SingleLine().MinWidth(0)
+			}
 		})
 	})
 	return *sel != prev
+}
+
+// chartInput pans and zooms v like a stock chart: the wheel zooms at the
+// pointer (a touchpad's sideways swipe pans), a drag pans, Left/Right pan
+// a tenth of the window (Shift: a whole one), Up/Down zoom in and out,
+// Home shows the oldest data and End returns to the live edge. Keys come
+// only while the chart has the focus.
+func chartInput(v *chartView, ev ui.InputEvent) bool {
+	ax := v.ax
+	if v.plotW <= 0 {
+		return false
+	}
+	frac := func(x float32) float64 { return float64((x - v.plotX) / v.plotW) }
+	anchor := 0.5
+	if v.hoverFrac >= 0 && v.hoverFrac <= 1 {
+		anchor = v.hoverFrac
+	}
+	switch ev.Kind {
+	case ui.InputScroll:
+		if ev.Precise && math.Abs(float64(ev.DX)) > math.Abs(float64(ev.DY)) {
+			v.pan(ax, float64(ev.DX/v.plotW))
+			return true
+		}
+		if ev.DY == 0 {
+			return false
+		}
+		f := max(0.5, min(2, math.Pow(1.002, float64(ev.DY))))
+		v.zoom(ax, f, frac(ev.X))
+		return true
+	case ui.InputPointerDown:
+		if ev.Button != 0 {
+			return false
+		}
+		v.dragging, v.dragX, v.focusReq = true, ev.X, true
+		return true
+	case ui.InputPointerMove:
+		if !v.dragging {
+			return false
+		}
+		v.pan(ax, -float64((ev.X-v.dragX)/v.plotW))
+		v.dragX = ev.X
+		return true
+	case ui.InputPointerUp:
+		was := v.dragging
+		v.dragging = false
+		return was
+	case ui.InputKeyDown:
+		step := 0.1
+		if ev.Mods&ui.Shift != 0 {
+			step = 1
+		}
+		switch ev.Key {
+		case ui.KeyLeft:
+			v.pan(ax, -step)
+		case ui.KeyRight:
+			v.pan(ax, step)
+		case ui.KeyUp:
+			v.zoom(ax, 0.8, anchor)
+		case ui.KeyDown:
+			v.zoom(ax, 1.25, anchor)
+		case ui.KeyHome:
+			v.home(ax)
+		case ui.KeyEnd:
+			v.end()
+		default:
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// paintPopIcon draws the open-in-window icon: a box with an arrow out of
+// its top right corner.
+func paintPopIcon(p *ui.Painter, r ui.Rect, c ui.Color) {
+	x, y, w := r.X+1, r.Y+1, r.W-2
+	const lw = 1.4
+	p.Line(x, y+w*0.35, x, y+w, lw, c)
+	p.Line(x, y+w, x+w*0.65, y+w, lw, c)
+	p.Line(x+w*0.65, y+w, x+w*0.65, y+w*0.7, lw, c)
+	p.Line(x, y+w*0.35, x+w*0.3, y+w*0.35, lw, c)
+	p.Line(x+w*0.42, y+w*0.58, x+w, y, lw, c)
+	p.Line(x+w*0.55, y, x+w, y, lw, c)
+	p.Line(x+w, y, x+w, y+w*0.45, lw, c)
 }
 
 const chartPadL, chartPadR, chartPadT, chartPadB = 52, 10, 10, 18
@@ -233,38 +454,72 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 		p.Text(plot.X+(plot.W-ew)/2, plot.Y+plot.H/2-7, msg, 12, muted)
 		return
 	}
-	first, last := i18n.Tf("chart.recent", n), i18n.T("chart.now")
-	if !m.Pts[0].At.IsZero() {
-		tf := bucketTimeFmt(m.Range)
-		first, last = m.Pts[0].At.Local().Format(tf), m.Pts[n-1].At.Local().Format(tf)
-	}
-	fw, _ := p.MeasureText(0, ui.Span{Text: first, Size: 10})
-	if !spanOverlaps(plot.X, plot.X+fw, skip) {
-		p.Text(plot.X, plot.Y+plot.H+3, first, 10, muted)
-	}
-	lw, _ := p.MeasureText(0, ui.Span{Text: last, Size: 10})
-	if !spanOverlaps(plot.X+plot.W-lw, plot.X+plot.W, skip) {
-		p.Text(plot.X+plot.W-lw, plot.Y+plot.H+3, last, 10, muted)
-	}
-	step := plot.W
-	if n > 1 {
-		step = plot.W / float32(n-1)
-	}
-	xAt := func(i int) float32 {
-		if n == 1 {
-			return plot.X + plot.W
-		}
-		return plot.X + float32(i)*step
-	}
-	yAt := func(v float64) float32 { return plot.Y + plot.H - float32(v/m.YMax)*plot.H }
-	bw := float32(math.Max(2, float64(step)*0.6))
-	probe := m.Range == history.RangeProbe
+	paintTimeLabels(p, plot, m, skip, muted)
+	vis := m.I1 - m.I0
 	pxW := int(math.Ceil(float64(plot.W * p.Scale())))
-	if chartDecimate && n > 2*pxW && pxW > 0 {
-		paintRangeDecimated(p, plot, m, probe, pxW, t)
+	probe := m.Range == history.RangeProbe
+	p.Clip(ui.Rect{X: plot.X - 1, Y: r.Y, W: plot.W + 2, H: plot.Y + plot.H - r.Y + 1}, 0, func() {
+		if chartDecimate && vis > 2*pxW && pxW > 0 {
+			paintRangeDecimated(p, plot, m, probe, pxW, t)
+			return
+		}
+		paintRangePoints(p, plot, m, probe, t)
+	})
+}
+
+// paintTimeLabels writes the window's start and end times and, as room
+// allows, evenly spaced times between them; untimed points keep the
+// "recent n … now" labels.
+func paintTimeLabels(p *ui.Painter, plot ui.Rect, m rangeChartModel, skip ui.Rect, muted ui.Color) {
+	y := plot.Y + plot.H + 3
+	put := func(s string, x float32, align int) {
+		w, _ := p.MeasureText(0, ui.Span{Text: s, Size: 10})
+		switch align {
+		case 0:
+			x -= w / 2
+		case 1:
+			x -= w
+		}
+		x = max(plot.X-chartPadL+4, min(x, plot.X+plot.W-w))
+		if !spanOverlaps(x, x+w, skip) {
+			p.Text(x, y, s, 10, muted)
+		}
+	}
+	if !m.Ax.Timed {
+		put(i18n.Tf("chart.recent", len(m.Pts)), plot.X, -1)
+		put(i18n.T("chart.now"), plot.X+plot.W, 1)
 		return
 	}
-	for i, pt := range m.Pts {
+	tf := bucketTimeFmt(m.Range)
+	at := func(f float64) string {
+		return time.UnixMilli(m.T0 + int64(f*float64(m.T1-m.T0))).Local().Format(tf)
+	}
+	k := max(2, min(6, int(plot.W/150)+1))
+	for j := 0; j < k; j++ {
+		f := float64(j) / float64(k-1)
+		align := 0
+		if j == 0 {
+			align = -1
+		} else if j == k-1 {
+			align = 1
+		}
+		put(at(f), plot.X+float32(f)*plot.W, align)
+	}
+}
+
+// paintRangePoints draws the visible points one by one: loss bars by
+// time and bucket width, then the line and band in runs broken by gaps
+// and by buckets without a successful sample.
+func paintRangePoints(p *ui.Painter, plot ui.Rect, m rangeChartModel, probe bool, t *ui.Theme) {
+	yAt := func(v float64) float32 { return plot.Y + plot.H - float32(v/m.YMax)*plot.H }
+	xAt := func(i int) float32 { return m.xOf(plot, m.TS[i]) }
+	bw := m.barW(plot)
+	alpha := float32(0.35)
+	if probe {
+		alpha = 0.22
+	}
+	for i := m.I0; i < m.I1; i++ {
+		pt := m.Pts[i]
 		if pt.LossPct <= 0 {
 			continue
 		}
@@ -273,11 +528,9 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 			h = plot.H
 		}
 		x0, x1 := max(plot.X, xAt(i)-bw/2), min(plot.X+plot.W, xAt(i)+bw/2)
-		alpha := float32(0.35)
-		if probe {
-			alpha = 0.22
+		if x1 > x0 {
+			p.Fill(ui.Rect{X: x0, Y: plot.Y + plot.H - h, W: x1 - x0, H: h}, t.Danger.Alpha(alpha), 0)
 		}
-		p.Fill(ui.Rect{X: x0, Y: plot.Y + plot.H - h, W: x1 - x0, H: h}, t.Danger.Alpha(alpha), 0)
 	}
 	seg := func(from, to int) {
 		if from < 0 || to < from {
@@ -286,20 +539,16 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 		var band, line ui.Path
 		for i := from; i <= to; i++ {
 			x := xAt(i)
+			hi := yAt(m.Pts[i].Max)
+			if probe {
+				hi = yAt(m.Pts[i].Avg)
+			}
 			if i == from {
 				line.MoveTo(x, yAt(m.Pts[i].Avg))
-				if probe {
-					band.MoveTo(x, yAt(m.Pts[i].Avg))
-				} else {
-					band.MoveTo(x, yAt(m.Pts[i].Max))
-				}
+				band.MoveTo(x, hi)
 			} else {
 				line.LineTo(x, yAt(m.Pts[i].Avg))
-				if probe {
-					band.LineTo(x, yAt(m.Pts[i].Avg))
-				} else {
-					band.LineTo(x, yAt(m.Pts[i].Max))
-				}
+				band.LineTo(x, hi)
 			}
 		}
 		for i := to; i >= from; i-- {
@@ -325,7 +574,12 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 		}
 	}
 	start := -1
-	for i, pt := range m.Pts {
+	for i := m.I0; i < m.I1; i++ {
+		pt := m.Pts[i]
+		if start >= 0 && m.Brk[i] {
+			seg(start, i-1)
+			start = -1
+		}
 		if !pt.OK {
 			seg(start, i-1)
 			start = -1
@@ -335,7 +589,7 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 			start = i
 		}
 	}
-	seg(start, n-1)
+	seg(start, m.I1-1)
 }
 
 // chartDecimate turns on the reduced drawing of charts with more points
@@ -344,33 +598,51 @@ var chartDecimate = true
 
 // paintRangeDecimated draws a chart of many points by pixel column: the
 // line through each column's lowest and highest average (chart.MinMax,
-// so spikes stay), stroked as one polyline, the band as the columns'
-// envelope and the loss bars as each column's worst loss.
+// so spikes stay), stroked as one polyline broken at gaps, the band as
+// the envelope of each run of columns and the loss bars as each column's
+// worst loss.
 func paintRangeDecimated(p *ui.Painter, plot ui.Rect, m rangeChartModel, probe bool, pxW int, t *ui.Theme) {
-	n := len(m.Pts)
 	yAt := func(v float64) float32 { return plot.Y + plot.H - float32(v/m.YMax)*plot.H }
-	col := func(i int) int { return min(pxW-1, i*pxW/max(1, n-1)) }
+	span := float64(m.T1 - m.T0)
+	frac := func(i int) float32 { return float32(float64(m.TS[i]-m.T0) / span) }
+	col := func(f float32) int { return int(math.Floor(float64(f) * float64(pxW))) }
 	type column struct {
-		has      bool
-		top, low float32 // band edges, in DIPs
+		has, cut bool // points; a gap starts in it
+		top, low float32
 		loss     float64
 	}
 	cols := make([]column, pxW)
-	xs := make([]float32, n)
-	ys := make([]float32, n)
+	vis := m.I1 - m.I0
+	xs := make([]float32, 0, vis+vis/64+4)
+	ys := make([]float32, 0, cap(xs))
 	nan := float32(math.NaN())
-	for i, pt := range m.Pts {
-		xs[i] = float32(i) / float32(max(1, n-1))
-		c := &cols[col(i)]
-		c.loss = max(c.loss, pt.LossPct)
+	for i := m.I0; i < m.I1; i++ {
+		pt := m.Pts[i]
+		f := frac(i)
+		if i > m.I0 && m.Brk[i] {
+			xs, ys = append(xs, nan), append(ys, nan) // break the line
+		}
+		k := col(f)
+		var c *column
+		if k >= 0 && k < pxW {
+			c = &cols[k]
+			if m.Brk[i] {
+				c.cut = true
+			}
+			c.loss = max(c.loss, pt.LossPct)
+		}
 		if !pt.OK {
-			ys[i] = nan
+			xs, ys = append(xs, f), append(ys, nan)
 			continue
 		}
-		ys[i] = yAt(pt.Avg)
+		y := yAt(pt.Avg)
+		xs, ys = append(xs, f), append(ys, y)
+		if c == nil {
+			continue
+		}
 		hi, lo := yAt(pt.Max), yAt(pt.Min)
 		if probe {
-			hi, lo = ys[i], plot.Y+plot.H
+			hi, lo = y, plot.Y+plot.H
 		}
 		if !c.has {
 			c.has, c.top, c.low = true, hi, lo
@@ -393,7 +665,6 @@ func paintRangeDecimated(p *ui.Painter, plot ui.Rect, m rangeChartModel, probe b
 		}
 		p.Fill(ui.Rect{X: plot.X + float32(k)*dx, Y: plot.Y + plot.H - h, W: max(dx, 1), H: h}, t.Danger.Alpha(alpha), 0)
 	}
-	// band: runs of columns with points
 	fill := chartAreaFill(t)
 	if !probe {
 		fill = ui.LinearGradient{From: t.Accent.Alpha(0.28), To: t.Accent.Alpha(0.12), Angle: 180}
@@ -404,7 +675,7 @@ func paintRangeDecimated(p *ui.Painter, plot ui.Rect, m rangeChartModel, probe b
 			continue
 		}
 		e := k
-		for e+1 < pxW && cols[e+1].has {
+		for e+1 < pxW && cols[e+1].has && !cols[e+1].cut {
 			e++
 		}
 		var band ui.Path
@@ -462,11 +733,11 @@ func makeCrosshair(p *ui.Painter, r ui.Rect, m rangeChartModel, hx, hy float32) 
 	if n == 0 || plot.W <= 4 || plot.H <= 4 || px < plot.X || px > plot.X+plot.W || py < plot.Y || py > plot.Y+plot.H {
 		return nil
 	}
-	i := chartNearest(n, plot.W, px-plot.X)
-	x := plot.X + plot.W
-	if n > 1 {
-		x = plot.X + float32(i)*plot.W/float32(n-1)
+	i := m.snap(plot, px)
+	if i < 0 {
+		return nil // in a gap: nothing to read
 	}
+	x := m.xOf(plot, m.TS[i])
 	xh := &crosshair{i: i, x: x, py: py}
 	if !m.Pts[i].At.IsZero() {
 		xh.timeText = m.Pts[i].At.Local().Format(bucketTimeFmt(m.Range))
@@ -476,6 +747,19 @@ func makeCrosshair(p *ui.Painter, r ui.Rect, m rangeChartModel, hx, hy float32) 
 		xh.timePill = ui.Rect{X: lx, Y: plot.Y + plot.H + 2, W: pw, H: 15}
 	}
 	return xh
+}
+
+// snap is the point the crosshair at x reads (chartSnap), or -1: within
+// a run of points the nearest one, in a gap only one within half a bar
+// (at least 10 px).
+func (m *rangeChartModel) snap(plot ui.Rect, x float32) int {
+	k := m.pxPerMs(plot)
+	if k <= 0 {
+		return chartSnap(m.TS, m.Brk, float64(m.T0), math.Inf(1))
+	}
+	t := float64(m.T0) + float64(x-plot.X)/k
+	snapPx := max(10, float64(m.barW(plot))/2+4)
+	return chartSnap(m.TS, m.Brk, t, snapPx/k)
 }
 
 // dashedLine draws a 1px dashed line between two points on an axis.

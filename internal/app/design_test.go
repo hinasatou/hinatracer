@@ -85,7 +85,7 @@ func TestDesignShots(t *testing.T) {
 			_ = a.run(func() {
 				ct = ui.NewTester(func(c *ui.Context) {
 					ui.Column(c).Fill().Padding(16).Background(c.Theme().Background).Children(func() {
-						a.rangeChart(c, &sel, pts, r, false)
+						a.rangeChart(c, &sel, pts, r, false, chartOpts{})
 					})
 				}, 760, 250)
 				ct.SetDark(dark)

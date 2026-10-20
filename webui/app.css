@@ -219,3 +219,18 @@ table.sized td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .range-bar select{min-width:150px}
 .range-edit input[type=datetime-local]{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:5px 8px}
 .row .sp,.card .row .sp{flex:1}
+.chart-head{gap:8px}
+.chart-head .sp{flex:1}
+.chart-span{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.chart-pop{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);cursor:pointer}
+.chart-pop:hover{color:var(--accent);border-color:var(--accent)}
+.chart-latest{padding:2px 8px;font-size:11px}
+.chart-nav{outline:none;border-radius:10px}
+.chart-nav:focus-visible .chart-plot,.chart-nav:focus .chart-plot{border-color:color-mix(in srgb,var(--accent) 55%,var(--border))}
+.chart-nav .chart-area{cursor:crosshair;touch-action:none}
+.chart-hint{font-size:11px;color:var(--muted);margin-top:6px}
+.chart-full{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.35);display:flex;padding:24px}
+.chart-full-box{flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:16px 20px;display:flex;flex-direction:column;overflow:auto}
+.chart-full-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.chart-full-head h2{margin:0;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chart.big .chart-plot{height:min(60vh,520px)}

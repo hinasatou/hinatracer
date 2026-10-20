@@ -160,7 +160,7 @@
     menuEl = m;
   }
   document.addEventListener('mousedown', e => { if (menuEl && !menuEl.contains(e.target)) closeMenu(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMenu(); closeModal(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMenu(); if (trendView) closeTrendView(); else closeModal(); } });
   window.addEventListener('blur', closeMenu);
 
   let modal = null; // {bg, update}
@@ -430,52 +430,186 @@
     if (p.code) out.push([T('chart.tip.code', p.code), 'i']);
     return out;
   }
-  // rangeChart draws probes (line, lost bands) or buckets (avg line,
-  // min–max band, loss% bars), with a stock-style crosshair on hover.
-  function rangeChart(pts, range) {
-    pts = pts || [];
+  // ---- time axis (same rules as the desktop chart, chart_time.go) ----
+  const BUCKET_MS = { minute: 60000, hour: 3600000, day: 86400000, week: 604800000, month: 2629746000 };
+  const CHART_DEF_BUCKETS = 120, CHART_MIN_BUCKETS = 4, CHART_FETCH = 5000, CHART_MAX_BAR = 24;
+  function medianStep(ts) {
+    const d = [];
+    for (let i = 1; i < ts.length; i++) if (ts[i] > ts[i - 1]) d.push(ts[i] - ts[i - 1]);
+    if (!d.length) return 0;
+    d.sort((a, b) => a - b);
+    return d[d.length >> 1];
+  }
+  // layoutTimes: each point's axis time (buckets in their middle), the
+  // gaps before each point (the line breaks there) and the axis limits.
+  // from/to (ms or null) is the time filter, which sets the span.
+  function layoutTimes(pts, range, from, to, now) {
     const n = pts.length, probe = range === 'probe';
-    const lost = pts.reduce((a, p) => a + (p.lost || 0), 0);
-    const top = niceCeil(Math.max(0, ...pts.filter(p => p.ok).map(p => p.max)) * 1.1) || 1;
-    const wrap = H('div', { class: 'chart' });
+    const timed = n > 0 && pts.every(p => p.at);
+    let bucket = BUCKET_MS[range] || 0;
+    const ts = pts.map((p, i) => {
+      if (!timed) return now - (n - 1 - i) * 1000;
+      const t = new Date(p.at).getTime();
+      if (probe) return t;
+      if (range === 'month') { const d = new Date(p.at); return (t + new Date(d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()).getTime()) / 2; }
+      return t + bucket / 2;
+    });
+    const med = medianStep(ts);
+    if (probe || !bucket) bucket = med || 1000;
+    let gap = probe ? Math.max(3 * med, 1500) : Math.max(bucket * 1.5, 3 * med);
+    if (!timed) gap = Infinity;
+    const brk = ts.map((t, i) => i > 0 && t - ts[i - 1] > gap);
+    const half = probe ? 0 : bucket / 2;
+    let lo = n ? ts[0] - half : now, hi = n ? Math.max(ts[n - 1] + half, now) : now;
+    if (from != null) lo = from;
+    if (to != null) hi = to;
+    if (hi < lo) hi = lo;
+    const minSpan = Math.max(CHART_MIN_BUCKETS * bucket, 1000);
+    const def = Math.max(minSpan, from != null || to != null ? hi - lo : Math.min(hi - lo, CHART_DEF_BUCKETS * bucket));
+    return { ts, brk, ax: { lo, hi, bucket, gap, def, timed, minSpan, maxSpan: Math.max(hi - lo, def) } };
+  }
+  // chart view: span/end/panned, K-line style. Not panned = live edge.
+  function newView() { return { span: 0, end: 0, panned: false, wantOlder: false }; }
+  const vSpan = (v, ax) => Math.max(ax.minSpan, Math.min(v.span > 0 ? v.span : ax.def, ax.maxSpan));
+  function vWindow(v, ax) {
+    const span = vSpan(v, ax), full = ax.hi - ax.lo;
+    if (span >= full) { const t0 = ax.lo - (span - full) / 2; return [t0, t0 + span]; }
+    const end = v.panned ? Math.max(ax.lo + span, Math.min(v.end, ax.hi)) : ax.hi;
+    return [end - span, end];
+  }
+  function vSetEnd(v, ax, end, more) {
+    const span = vSpan(v, ax);
+    if (span >= ax.hi - ax.lo) { v.panned = false; return; }
+    end = Math.max(ax.lo + span, Math.min(end, ax.hi));
+    v.panned = end < ax.hi; v.end = end;
+    if (end - span <= ax.lo && more) v.wantOlder = true;
+  }
+  function vPan(v, ax, frac, more) { const [t0, t1] = vWindow(v, ax); vSetEnd(v, ax, t1 + frac * (t1 - t0), more); }
+  function vZoom(v, ax, f, anchor, more) {
+    const [t0, t1] = vWindow(v, ax), old = t1 - t0;
+    v.span = Math.max(ax.minSpan, Math.min(old * f, ax.maxSpan));
+    if (!v.panned) return;
+    anchor = Math.max(0, Math.min(1, anchor));
+    const ta = t0 + anchor * old;
+    vSetEnd(v, ax, ta - anchor * v.span + v.span, more);
+  }
+  // chartSnap: the nearest point within a run; in a gap only one within snapMs.
+  function chartSnap(ts, brk, t, snapMs) {
+    const n = ts.length;
+    if (!n) return -1;
+    let lo = 0, hi = n;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (ts[m] >= t) hi = m; else lo = m + 1; }
+    const j = lo, near = i => Math.abs(ts[i] - t);
+    if (j === 0) return near(0) <= snapMs ? 0 : -1;
+    if (j === n) return near(n - 1) <= snapMs ? n - 1 : -1;
+    const i = near(j) < near(j - 1) ? j : j - 1;
+    return !brk[j] || near(i) <= snapMs ? i : -1;
+  }
+  function fmtSpan(ms) {
+    const u = [[86400000, 'd'], [3600000, 'h'], [60000, 'min'], [1000, 's']];
+    for (const [k, s] of u) if (ms >= k) { const v = ms / k; return (v >= 10 ? v.toFixed(0) : v.toFixed(1).replace(/\.0$/, '')) + ' ' + s; }
+    return Math.round(ms) + ' ms';
+  }
+  function popIcon() {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 16 16'); s.setAttribute('width', '14'); s.setAttribute('height', '14');
+    s.innerHTML = '<path d="M9.5 2.5h4v4M13.5 2.5 8 8M6.5 3.5h-3v9h9v-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
+    return s;
+  }
+  // rangeChart draws probes (line, lost bars) or buckets (avg line,
+  // min–max band, loss% bars) on a real time axis: lines break at gaps,
+  // bars sit at their time. o: {view, from, to, more, areaPx, onPop, latest, big}.
+  function rangeChart(pts, range, o) {
+    pts = pts || []; o = o || {};
+    const probe = range === 'probe', now = Date.now();
+    const { ts, brk, ax } = layoutTimes(pts, range, o.from, o.to, now);
+    const view = o.view || newView();
+    const [t0, t1] = vWindow(view, ax);
+    let i0 = 0; while (i0 < ts.length && ts[i0] < t0 - ax.bucket) i0++;
+    let i1 = i0; while (i1 < ts.length && ts[i1] <= t1 + ax.bucket) i1++;
+    i0 = Math.max(0, i0 - 1); i1 = Math.min(ts.length, i1 + 1);
+    const vis = [];
+    for (let i = i0; i < i1; i++) vis.push(i);
+    const lost = vis.reduce((a, i) => a + (ts[i] >= t0 && ts[i] <= t1 ? pts[i].lost || 0 : 0), 0);
+    const top = niceCeil(Math.max(0, ...vis.filter(i => pts[i].ok).map(i => pts[i].max)) * 1.1) || 1;
+    const areaPx = o.areaPx || 600;
+    const pxPerMs = t1 > t0 ? areaPx / (t1 - t0) : 0;
+    const barPx = Math.max(2, Math.min(CHART_MAX_BAR, ax.bucket * pxPerMs * (probe ? 0.6 : 0.7)));
+    const wrap = H('div', { class: 'chart' + (o.big ? ' big' : '') });
     const head = H('div', { class: 'chart-head' }, H('b', { text: T('chart.title') }));
+    if (ax.timed && vis.length) head.append(H('span', { class: 'chart-span', text: fmtRangeTime(t0, probe ? 'probe' : 'minute') + ' – ' + fmtRangeTime(t1, probe ? 'probe' : 'minute') + ' · ' + fmtSpan(t1 - t0) }));
+    head.append(H('span', { class: 'sp' }));
     if (probe) { if (lost) head.append(H('span', { class: 'chart-lost', text: T('chart.lost', lost) })); }
     else head.append(H('span', { class: 'chart-legend', text: T('chart.legend.band') + ' · ' + T('chart.legend.loss') }));
+    if (view.panned && o.latest) head.append(H('button', { class: 'btn sm chart-latest', type: 'button', title: T('chart.latest.tip'), onclick: o.latest }, T('chart.latest') + ' ⇥'));
+    if (o.onPop) {
+      const b = H('button', { class: 'chart-pop', type: 'button', title: T('chart.pop'), 'aria-label': T('chart.pop'), onclick: o.onPop });
+      b.append(popIcon()); head.append(b);
+    }
     const plot = H('div', { class: 'chart-plot' });
     const svg = sparkSvg((mk, W, Hh) => {
-      const x = i => n < 2 ? W : (i * W) / (n - 1), y = v => Hh - (v / top) * Hh;
-      const bw = Math.max(2, (n < 2 ? W : W / (n - 1)) * 0.6);
-      pts.forEach((p, i) => {
-        if (!(p.lossPct > 0)) return;
-        const h = probe ? Hh : (p.lossPct / 100) * Hh;
-        const x0 = Math.max(0, x(i) - bw / 2), x1 = Math.min(W, x(i) + bw / 2);
-        mk('rect', { x: x0, y: Hh - h, width: Math.max(0, x1 - x0), height: h }, 'loss');
-      });
-      let line = '', band = '', start = -1;
-      const flush = end => {
-        if (start < 0) return;
-        for (let i = end; i >= start; i--) band += ` L${x(i).toFixed(1)} ${(probe ? Hh : y(pts[i].min)).toFixed(1)}`;
-        band += ' Z';
-        if (start === end) {
-          if (!probe) mk('line', { x1: x(start), x2: x(start), y1: y(pts[start].min), y2: y(pts[start].max), 'vector-effect': 'non-scaling-stroke' }, 'band-stem');
-          mk('rect', { x: x(start) - 2, y: y(pts[start].avg) - 2, width: 4, height: 4 }, 'dot');
-        }
-        start = -1;
+      const x = t => t1 > t0 ? ((t - t0) / (t1 - t0)) * W : W / 2, y = v => Hh - (v / top) * Hh;
+      const bw = barPx * W / areaPx;
+      const bar = (t, pct) => {
+        const h = probe ? Hh : (pct / 100) * Hh;
+        const x0 = Math.max(0, x(t) - bw / 2), x1 = Math.min(W, x(t) + bw / 2);
+        if (x1 > x0) mk('rect', { x: x0, y: Hh - h, width: x1 - x0, height: h }, 'loss');
       };
-      pts.forEach((p, i) => {
-        if (!p.ok) { flush(i - 1); return; }
-        const pt = `${x(i).toFixed(1)} ${y(p.avg).toFixed(1)}`, mx = `${x(i).toFixed(1)} ${y(probe ? p.avg : p.max).toFixed(1)}`;
-        if (start < 0) { start = i; line += ` M${pt}`; band += ` M${mx}`; } else { line += ` L${pt}`; band += ` L${mx}`; }
-      });
-      flush(n - 1);
+      // columns of (avg, min, max, loss) when there are more points than pixels
+      let cols = null;
+      if (vis.length > 2 * areaPx) {
+        const nc = Math.ceil(areaPx), cw = (t1 - t0) / nc;
+        cols = new Array(nc).fill(null);
+        for (const i of vis) {
+          const c = Math.floor((ts[i] - t0) / cw);
+          if (c < 0 || c >= nc) continue;
+          const p = pts[i];
+          let k = cols[c];
+          if (!k) k = cols[c] = { t: t0 + (c + 0.5) * cw, s: 0, n: 0, mn: Infinity, mx: -Infinity, loss: 0, cut: false, ok: false };
+          if (brk[i] && k.n) k.cut = true;
+          k.loss = Math.max(k.loss, p.lossPct || 0);
+          if (p.ok) { k.ok = true; k.s += p.avg; k.n++; k.mn = Math.min(k.mn, probe ? p.avg : p.min); k.mx = Math.max(k.mx, probe ? p.avg : p.max); }
+        }
+      }
+      let line = '', band = '', run = [];
+      const flush = () => {
+        if (!run.length) return;
+        const f = run[0];
+        line += ` M${x(f.t).toFixed(1)} ${y(f.avg).toFixed(1)}` + run.slice(1).map(r => ` L${x(r.t).toFixed(1)} ${y(r.avg).toFixed(1)}`).join('');
+        band += ` M${x(f.t).toFixed(1)} ${y(f.max).toFixed(1)}` + run.slice(1).map(r => ` L${x(r.t).toFixed(1)} ${y(r.max).toFixed(1)}`).join('');
+        for (let k = run.length - 1; k >= 0; k--) band += ` L${x(run[k].t).toFixed(1)} ${(probe && !cols ? Hh : y(run[k].min)).toFixed(1)}`;
+        band += ' Z';
+        if (run.length === 1) {
+          if (!probe) mk('line', { x1: x(f.t), x2: x(f.t), y1: y(f.min), y2: y(f.max), 'vector-effect': 'non-scaling-stroke' }, 'band-stem');
+          mk('rect', { x: x(f.t) - 2, y: y(f.avg) - 2, width: 4, height: 4 }, 'dot');
+        }
+        run = [];
+      };
+      if (cols) {
+        let prevT = null;
+        cols.forEach(k => {
+          if (!k) return;
+          if (k.loss > 0) bar(k.t, k.loss);
+          if (!k.ok || k.cut || (prevT != null && k.t - prevT > ax.gap)) flush();
+          if (k.ok) { run.push({ t: k.t, avg: k.s / k.n, min: k.mn, max: k.mx }); prevT = k.t; } else prevT = null;
+        });
+      } else {
+        for (const i of vis) {
+          const p = pts[i];
+          if (p.lossPct > 0) bar(ts[i], p.lossPct);
+          if (!p.ok || brk[i]) flush();
+          if (p.ok) run.push({ t: ts[i], avg: p.avg, min: probe ? p.avg : p.min, max: probe ? p.avg : p.max });
+        }
+      }
+      flush();
       if (band) mk('path', { d: band }, 'a');
       if (line) mk('path', { d: line, 'vector-effect': 'non-scaling-stroke' }, 'l');
     });
     const yl = H('div', { class: 'chart-y' }, ...[1, 0.5, 0].map(f => H('span', { text: axisMs(top * f) })));
     const area = H('div', { class: 'chart-area' }, svg);
     plot.append(yl, area);
-    if (!n) plot.append(H('div', { class: 'chart-empty', text: T('chart.empty') }));
-    // crosshair overlay
+    if (!vis.length) plot.append(H('div', { class: 'chart-empty', text: T('chart.empty') }));
+    // crosshair: snaps to the nearest real point by time; nothing in a gap
     const vx = H('div', { class: 'xh-v', hidden: true }), hy = H('div', { class: 'xh-h', hidden: true });
     const ylab = H('div', { class: 'xh-lab y', hidden: true }), xlab = H('div', { class: 'xh-lab x', hidden: true });
     const tip = H('div', { class: 'xh-tip', hidden: true }), ring = H('div', { class: 'xh-pt', hidden: true });
@@ -484,10 +618,13 @@
     const hide = () => { [vx, hy, ring, ylab, xlab, tip].forEach(e => { e.hidden = true; }); xticks().forEach(s => { s.style.visibility = ''; }); };
     area.addEventListener('mouseleave', hide);
     area.addEventListener('mousemove', e => {
-      if (!n) return;
+      if (!vis.length || o.dragging && o.dragging()) { hide(); return; }
       const rc = area.getBoundingClientRect(), mx = e.clientX - rc.left, my = e.clientY - rc.top;
-      if (mx < 0 || my < 0 || mx > rc.width || my > rc.height) { hide(); return; }
-      const i = chartNearest(n, rc.width, mx), xi = n < 2 ? rc.width : i * rc.width / (n - 1);
+      if (mx < 0 || my < 0 || mx > rc.width || my > rc.height || t1 <= t0) { hide(); return; }
+      const ppm = rc.width / (t1 - t0), t = t0 + mx / ppm;
+      const i = chartSnap(ts, brk, t, Math.max(10, barPx / 2 + 4) / ppm);
+      if (i < 0 || ts[i] < t0 || ts[i] > t1) { hide(); return; }
+      const xi = (ts[i] - t0) * ppm;
       vx.style.left = xi + 'px'; hy.style.top = my + 'px';
       ylab.textContent = axisMs(top * (1 - my / rc.height)); ylab.style.top = (my - 8) + 'px';
       const p = pts[i];
@@ -499,7 +636,7 @@
       }
       ring.hidden = !p.ok;
       if (p.ok) { ring.style.left = xi + 'px'; ring.style.top = (rc.height - (p.avg / top) * rc.height) + 'px'; }
-      tip.replaceChildren(...tipLines(pts, i, range).map(([t, k]) => k ? H('div', { class: 'row k-' + k }, H('i'), H('span', { text: t })) : H('div', { class: 'time', text: t })));
+      tip.replaceChildren(...tipLines(pts, i, range).map(([tt, k]) => k ? H('div', { class: 'row k-' + k }, H('i'), H('span', { text: tt })) : H('div', { class: 'time', text: tt })));
       vx.hidden = hy.hidden = ylab.hidden = tip.hidden = false;
       const xr = xlab.hidden ? null : xlab.getBoundingClientRect();
       xticks().forEach(s => {
@@ -511,47 +648,162 @@
       const above = my - th - 10;
       tip.style.top = Math.max(0, Math.min(rc.height - th, above >= 0 ? above : my + 10)) + 'px';
     });
-    const first = n ? (pts[0].at ? fmtRangeTime(pts[0].at, range) : T('chart.recent', n)) : '';
-    const last = n ? (pts[n - 1].at ? fmtRangeTime(pts[n - 1].at, range) : T('chart.now')) : '';
-    wrap.append(head, plot, H('div', { class: 'chart-x' }, H('span', { text: first }), H('span', { text: last })));
+    // x axis: start, end and a few ticks between
+    const xa = H('div', { class: 'chart-x' });
+    if (!ax.timed) {
+      if (vis.length) xa.append(H('span', { text: T('chart.recent', vis.length) }), H('span', { text: T('chart.now') }));
+    } else if (vis.length || o.from != null) {
+      const k = Math.max(2, Math.min(6, Math.floor(areaPx / 150) + 1));
+      const step = (t1 - t0) / (k - 1), fr = range === 'month' && step >= 28 * 86400000 ? 'month' : step >= 86400000 ? 'day' : step >= 60000 ? 'minute' : 'probe';
+      for (let j = 0; j < k; j++) xa.append(H('span', { text: fmtRangeTime(t0 + (t1 - t0) * j / (k - 1), fr) }));
+    }
+    wrap.append(head, plot, xa);
+    wrap._ax = ax;
     return wrap;
   }
+  // RB holds each page's time filter; a chart's axis spans it.
+  const RB = {};
+  const refFilterKind = ref => ref.kind === 'hop' ? 'trace' : ref.kind === 'http' ? 'http' : 'ping';
+  function refFilter(ref) {
+    const rb = RB[refFilterKind(ref)];
+    if (!rb || !rb.el.isConnected || !rb.active()) return [null, null];
+    const b = rb.bounds() || [null, null];
+    return [b[0] ? b[0].getTime() : null, b[1] ? b[1].getTime() : null];
+  }
   // chartWidget: range selector + chart for a ping target, hop or HTTP
-  // target; refresh(row) is called on every state update.
-  function chartWidget(ref) {
-    let range = 'probe', pts = null, ptsFor = '', loading = false, at = 0, lastRow = null;
-    const segs = H('div', { class: 'seg' }), host = H('div');
+  // target; refresh(row) is called on every state update. Keys (with
+  // focus or hover): ←/→ pan 10% (Shift: a page), ↑/↓ zoom, Home/End;
+  // the wheel zooms at the pointer, dragging pans.
+  function chartWidget(ref, opt) {
+    opt = opt || {};
+    let range = opt.range || 'probe', pts = null, ptsFor = '', loading = false, older = false, more = false, at = 0, lastRow = null;
+    let view = newView(), viewFor = '', cur = null, hover = false, drag = null;
+    const segs = H('div', { class: 'seg' });
+    const host = H('div', { class: 'chart-nav', tabindex: '0', 'aria-label': T('chart.title') });
     RANGES.forEach(r => {
       const b = H('button', { class: 'seg-btn', type: 'button', text: T('chart.range.' + r), onclick: () => { range = r; pts = null; ptsFor = ''; refresh(lastRow, true); } });
       b.dataset.r = r; segs.append(b);
     });
+    const wantKey = () => { const [f, t] = refFilter(ref); return range + '|' + (f || '') + '|' + (t || ''); };
+    const areaPx = () => { const a = host.querySelector('.chart-area'); return (a && a.clientWidth) || Math.max(200, host.clientWidth - 62) || 600; };
+    const ax = () => cur && cur._ax;
     function draw() {
-      if (ptsFor === range && pts) host.replaceChildren(rangeChart(pts, range));
-      else if (range === 'probe' && lastRow && lastRow.hist) host.replaceChildren(rangeChart(histToPts(lastRow.hist), range));
-      else host.replaceChildren(H('div', { class: 'chart-empty static', text: T('chart.loading') }));
+      const want = wantKey();
+      if (viewFor !== want) { view = newView(); viewFor = want; }
+      const [f, t] = refFilter(ref);
+      const o = { view, from: f, to: t, more, areaPx: areaPx(), onPop: opt.onPop ? () => opt.onPop(range) : null, latest: () => { view.panned = false; draw(); }, big: opt.big, dragging: () => !!drag };
+      let el;
+      if (ptsFor === want && pts) el = rangeChart(pts, range, o);
+      else if (range === 'probe' && lastRow && lastRow.hist) el = rangeChart(histToPts(lastRow.hist), range, o);
+      else el = H('div', { class: 'chart-empty static', text: T('chart.loading') });
+      cur = el._ax ? el : null;
+      host.replaceChildren(el);
+      if (view.wantOlder) { view.wantOlder = false; loadOlder(); }
+    }
+    function moved() { draw(); }
+    host.addEventListener('wheel', e => {
+      const a = ax(), area = host.querySelector('.chart-area');
+      if (!a || !area) return;
+      e.preventDefault();
+      const rc = area.getBoundingClientRect();
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) vPan(view, a, e.deltaX / rc.width, more);
+      else vZoom(view, a, Math.max(0.5, Math.min(2, Math.pow(1.002, e.deltaY))), (e.clientX - rc.left) / rc.width, more);
+      moved();
+    }, { passive: false });
+    host.addEventListener('mousedown', e => {
+      if (e.button !== 0 || !ax() || e.target.closest('button')) return;
+      drag = { x: e.clientX }; host.focus({ preventScroll: true }); e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => {
+      if (!drag || !host.isConnected) return;
+      const a = ax(), area = host.querySelector('.chart-area');
+      if (!a || !area) return;
+      vPan(view, a, -(e.clientX - drag.x) / area.clientWidth, more); drag.x = e.clientX; moved();
+    });
+    window.addEventListener('mouseup', () => { drag = null; });
+    host.addEventListener('mouseenter', () => { hover = true; });
+    host.addEventListener('mouseleave', () => { hover = false; });
+    const onKey = e => {
+      if (!host.isConnected) { document.removeEventListener('keydown', onKey); return; }
+      const ae = document.activeElement;
+      // only with focus, or hover while nothing else (an input, a table) has it
+      if (!(ae === host || (hover && (!ae || ae === document.body)))) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const a = ax();
+      if (!a) return;
+      const step = e.shiftKey ? 1 : 0.1;
+      let anchor = 0.5;
+      switch (e.key) {
+        case 'ArrowLeft': vPan(view, a, -step, more); break;
+        case 'ArrowRight': vPan(view, a, step, more); break;
+        case 'ArrowUp': vZoom(view, a, 0.8, anchor, more); break;
+        case 'ArrowDown': vZoom(view, a, 1.25, anchor, more); break;
+        case 'Home': vSetEnd(view, a, -Infinity, more); break;
+        case 'End': view.panned = false; break;
+        default: return;
+      }
+      e.preventDefault(); e.stopPropagation(); moved();
+    };
+    document.addEventListener('keydown', onKey);
+    function loadOlder() {
+      if (older || !more || !pts || !pts.length || ptsFor !== wantKey()) return;
+      older = true;
+      const want = ptsFor, [f] = refFilter(ref);
+      histQuery(ref, range, f, new Date(pts[0].at).getTime(), CHART_FETCH).then(j => {
+        older = false;
+        if (ptsFor !== want) return;
+        const got = ((j.data && j.data.points) || []).filter(p => p.at < pts[0].at);
+        more = got.length >= CHART_FETCH - 1;
+        if (got.length) { pts = got.concat(pts); draw(); }
+      }).catch(() => { older = false; });
     }
     function refresh(row, force) {
       if (row) lastRow = row;
       segs.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('on', b.dataset.r === range));
-      if (!pts || force) draw();
-      if (loading || (!force && Date.now() - at < (range === 'probe' ? 1000 : 5000))) return;
+      const want = wantKey();
+      const busy = !!host.querySelector('.xh-tip:not([hidden])') || drag;
+      if (!pts || force || ptsFor !== want || (!view.panned && !busy)) draw();
+      if (loading || (!force && ptsFor === want && Date.now() - at < (range === 'probe' ? 1000 : 5000))) return;
       loading = true; at = Date.now();
-      const want = range;
-      histQuery(ref, range).then(j => {
+      const [f, t] = refFilter(ref);
+      histQuery(ref, range, f, t, CHART_FETCH).then(j => {
         loading = false;
-        if (range !== want) return;
-        pts = (j.data && j.data.points) || []; ptsFor = want;
-        if (!host.querySelector('.xh-tip:not([hidden])')) draw();
+        if (wantKey() !== want) return;
+        const fresh = (j.data && j.data.points) || [];
+        if (ptsFor === want && pts && pts.length && fresh.length) {
+          pts = pts.filter(p => p.at < fresh[0].at).concat(fresh); // keep the older pages
+        } else { pts = fresh; more = fresh.length >= CHART_FETCH; }
+        ptsFor = want;
+        if (!host.querySelector('.xh-tip:not([hidden])') && !drag) draw();
       }).catch(() => { loading = false; });
     }
-    return { el: H('div', null, segs, host), refresh, range: () => range };
+    const right = H('div', { class: 'chart-tools' }, segs);
+    return { el: H('div', null, right, host, opt.hint ? H('div', { class: 'chart-hint', text: T('chart.nav.hint') }) : null), refresh, range: () => range, focus: () => host.focus({ preventScroll: true }) };
   }
-  function histQuery(ref, range) {
+  function histQuery(ref, range, from, to, limit) {
     const q = new URLSearchParams({ range });
     if (ref.kind === 'hop') { q.set('tab', ref.tab); q.set('ttl', ref.ttl); }
     else if (ref.kind === 'http') q.set('http', ref.id);
     else q.set('id', ref.id);
+    if (from != null) q.set('from', String(Math.floor(from)));
+    if (to != null) q.set('to', String(Math.ceil(to)));
+    if (limit) q.set('limit', String(limit));
     return fetch('/api/history?' + q, { credentials: 'same-origin', cache: 'no-store' }).then(r => r.json());
+  }
+  // openTrendView: the chart large, over the whole page (read-only: it
+  // only reads history). Escape or ✕ closes it. rowOf(S) finds the row.
+  let trendView = null;
+  function closeTrendView() { if (trendView) { trendView.bg.remove(); trendView = null; } }
+  function openTrendView(ref, title, range, rowOf) {
+    closeTrendView();
+    const chart = chartWidget(ref, { range, big: true, hint: true });
+    const close = H('button', { class: 'btn sm', type: 'button', onclick: closeTrendView, 'aria-label': T('detail.close') }, '✕');
+    const box = H('div', { class: 'chart-full-box' }, H('div', { class: 'chart-full-head' }, H('h2', { text: T('chart.trend_title', title) }), close), chart.el);
+    const bg = H('div', { class: 'chart-full' }, box);
+    document.body.append(bg);
+    trendView = { bg, update: st => { const r = rowOf(st); if (!r) { closeTrendView(); return; } chart.refresh(r); } };
+    if (S) trendView.update(S);
+    setTimeout(() => chart.focus(), 30);
   }
   function histURL(ref, range, fmt) {
     const q = new URLSearchParams({ range });
@@ -779,7 +1031,9 @@
       const q = new URLSearchParams(query()); q.delete('kind'); q.delete('tab');
       return q.toString();
     };
-    return { el, refresh, overlay, active, exportQuery };
+    const rb = { el, refresh, overlay, active, exportQuery, bounds };
+    RB[kind] = rb;
+    return rb;
   }
 
   // ---------- app state ----------
@@ -840,6 +1094,7 @@
     updBanner();
     if (cur && cur.update) cur.update(S);
     if (modal && modal.update) modal.update(S);
+    if (trendView) trendView.update(S);
   }
 
   // ---------- update banner ----------
@@ -863,7 +1118,15 @@
     openModal(box => {
       const title = H('h2'), stats = H('div', { class: 'stats' }), chartBox = H('div'), kv = H('div', { class: 'kv' });
       const actions = H('div', { class: 'actions' });
-      const chart = chartWidget(ref);
+      const rowOf = st => {
+        if (ref.kind !== 'hop') return st.ping.rows.find(x => x.id === ref.id);
+        const tb = st.trace.tabs.find(t => t.id === ref.tab);
+        return tb && tb.hops.find(h => h.ttl === ref.ttl);
+      };
+      const chart = chartWidget(ref, { onPop: rng => {
+        const r = rowOf(S);
+        if (r) openTrendView(ref, ref.kind === 'hop' ? 'TTL ' + r.ttl + ' · ' + r.addr : (r.alias || r.host), rng, rowOf);
+      } });
       chartBox.append(chart.el);
       box.append(title, stats, chartBox, kv, actions);
       let text = '', host = '', lastSig = '';
@@ -979,7 +1242,8 @@
     const ref = { kind: 'http', id };
     openModal(box => {
       const title = H('h2'), url = H('div', { class: 'desc mono' }), stats = H('div', { class: 'stats' }), kv = H('div', { class: 'kv' }), err = H('div', { class: 'status bad' });
-      const chart = chartWidget(ref);
+      const rowOf = st => st.http.rows.find(x => x.id === id);
+      const chart = chartWidget(ref, { onPop: rng => { const r = rowOf(S); if (r) openTrendView(ref, r.alias || r.spec.url, rng, rowOf); } });
       box.append(title, url, stats, chart.el, kv, err, H('div', { class: 'actions' },
         histExportButton(ref, () => chart.range()),
         H('button', { class: 'btn primary', onclick: closeModal }, T('detail.close'))));

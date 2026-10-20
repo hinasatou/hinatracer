@@ -42,6 +42,10 @@ type httpUI struct {
 	ptsFor    string
 	querying  bool
 	queryAt   time.Time
+	want      string
+	more      bool
+	older     bool
+	view      chartView
 	exportMsg string
 }
 
@@ -704,29 +708,11 @@ func (a *app) httpDetailRow() (wsHTTP, bool) {
 // kickHTTPQuery loads chart points in the background (UI thread).
 func (a *app) kickHTTPQuery(force bool) {
 	h := &a.http
-	rng := chartRanges[max(0, min(h.rng, len(chartRanges)-1))]
-	want := fmt.Sprintf("%d|%s", h.detailID, rng)
-	throttle := 5 * time.Second
-	if rng == history.RangeProbe {
-		throttle = time.Second
-	}
-	if h.querying || (!force && want == h.ptsFor && time.Since(h.queryAt) < throttle) {
-		return
-	}
-	h.querying, h.queryAt = true, time.Now()
-	b := a.be()
-	q := url.Values{"http": {strconv.Itoa(h.detailID)}, "range": {string(rng)}}
-	safeGo("http.history", func() {
-		pts, err := historyVia(b, q)
-		_ = a.run(func() {
-			h.querying = false
-			if err == nil {
-				h.pts, h.ptsFor = pts, want
-			}
-			if h.win != nil {
-				h.win.Update(func() {})
-			}
-		})
+	f := feedPtrs{&h.rng, &h.pts, &h.ptsFor, &h.want, &h.querying, &h.queryAt, &h.more, &h.older, &h.view}
+	a.kickFeed(f, chartRef{Kind: "http", HTTPID: h.detailID}, &a.rangeHTTP, force, func() {
+		if h.win != nil {
+			h.win.Update(func() {})
+		}
 	})
 }
 
@@ -811,7 +797,8 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 			ui.Text(c, r.Err).FontSize(12).TextColor(t.Danger).Selectable()
 		}
 		rng := chartRanges[max(0, min(h.rng, len(chartRanges)-1))]
-		want := fmt.Sprintf("%d|%s", r.ID, rng)
+		ref := chartRef{Kind: "http", HTTPID: r.ID}
+		want := feedWant(ref, rng, &a.rangeHTTP)
 		var pts []history.Point
 		loading := h.ptsFor != want
 		if !loading {
@@ -819,8 +806,18 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 		} else if rng == history.RangeProbe {
 			pts, loading = histPoints(r.Hist), false
 		}
-		if a.rangeChart(c, &h.rng, pts, rng, loading) {
+		from, to, _ := a.rangeHTTP.bounds(time.Now())
+		if !a.rangeHTTP.active() {
+			from, to = time.Time{}, time.Time{}
+		}
+		h.view.reset(want)
+		title := httpLabel(r)
+		o := chartOpts{view: &h.view, from: from, to: to, more: h.more, onPop: func() { a.openTrend(ref, title, h.rng) }}
+		if a.rangeChart(c, &h.rng, pts, rng, loading, o) {
 			a.kickHTTPQuery(true)
+		}
+		if h.view.WantOlder {
+			a.kickHTTPQuery(false)
 		}
 		ui.Spacer(c)
 		ui.Row(c).Gap(10).Justify(ui.End).AlignItems(ui.Center).MinWidth(0).Children(func() {

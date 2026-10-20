@@ -107,7 +107,7 @@ func TestChartPrototypeShots(t *testing.T) {
 		ours := ui.NewTester(func(c *ui.Context) {
 			ui.Column(c).Padding(10).Children(func() {
 				a := &app{}
-				a.rangeChart(c, new(int), m.Pts, m.Range, false)
+				a.rangeChart(c, new(int), m.Pts, m.Range, false, chartOpts{})
 			})
 		}, W, H)
 		ours.SetDark(dark)

@@ -148,6 +148,11 @@ type app struct {
 	detailPtsFor    string
 	detailQueryAt   time.Time
 	detailQuerying  bool
+	detailWantQ     string
+	detailMore      bool // older chart data may exist
+	detailOlder     bool // loading it
+	detailView      chartView
+	trendWins       map[string]*trendWin
 	detailExportMsg string
 
 	hist     *history.Store
@@ -426,6 +431,7 @@ func (a *app) flushUIUpdate() {
 // changed only when the mouse moved over it.
 func (a *app) applyFlush(snaps []pinger.Snapshot) {
 	a.pingSnaps = snaps
+	a.refreshTrends()
 	if a.detailWin == nil && a.detailRedraw == nil {
 		return
 	}

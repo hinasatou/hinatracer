@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"hinatracer/internal/history"
 )
@@ -69,6 +70,8 @@ func (a *app) webRoutesHistory(mux *http.ServeMux) {
 		if limit <= 0 {
 			limit = chartSamples
 		}
+		limit = min(limit, chartFetchMax)
+		from, to := parseHistBound(r.URL.Query().Get("from")), parseHistBound(r.URL.Query().Get("to"))
 		err := a.run(func() {
 			var ok bool
 			key, target, _, _, ok = a.historyKeyFromReq(r)
@@ -76,8 +79,16 @@ func (a *app) webRoutesHistory(mux *http.ServeMux) {
 				return
 			}
 			_ = target
-			pts = a.hist.Query(key, rng, limit)
+			h := a.hist
+			pts = nil
+			if h != nil {
+				// the query runs below, off the UI thread
+				pts = []history.Point{}
+			}
 		})
+		if pts != nil {
+			pts = a.hist.QueryRange(key, rng, from, to, limit)
+		}
 		if err != nil {
 			writeJSON(w, 503, apiResult{Message: err.Error()})
 			return
@@ -136,4 +147,23 @@ func (a *app) webRoutesHistory(mux *http.ServeMux) {
 		}
 		return apiResult{OK: true}
 	}))
+}
+
+// chartFetchMax caps the points one /api/history call returns.
+const chartFetchMax = 20000
+
+// parseHistBound reads a from/to bound: RFC 3339 or unix milliseconds;
+// anything else is open (zero).
+func parseHistBound(v string) time.Time {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t
+	}
+	if ms, err := strconv.ParseInt(v, 10, 64); err == nil && ms > 0 {
+		return time.UnixMilli(ms)
+	}
+	return time.Time{}
 }
