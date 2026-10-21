@@ -1422,9 +1422,13 @@ func (a *app) viewLocalOnlySettings(c *ui.Context) {
 			}
 			if cbtn.Clicked() && running {
 				a.dataDL.Cancel()
+				a.taskbarClear()
 			}
 		})
 		if a.dataDL != nil {
+			if running {
+				a.syncDataDLTaskbar()
+			}
 			for _, p := range a.dataDL.Snapshot() {
 				line := formatDataDLProgress(p)
 				col := t.TextMuted

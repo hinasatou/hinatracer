@@ -91,7 +91,7 @@ func installDesktopAlerts(a *app, quit func()) {
 		tip := trayToolTip(failing)
 		menu := trayMenu(a, ro, quit)
 		if tr.tray == nil {
-			t, err := mygo.NewTray(mygo.TrayOptions{Icon: appIconPNG, ToolTip: tip, Menu: menu})
+			t, err := mygo.NewTray(mygo.TrayOptions{ID: "hinatracer", Icon: appIconPNG, ToolTip: tip, Menu: menu})
 			if err != nil {
 				return
 			}

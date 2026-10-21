@@ -142,7 +142,9 @@ func layoutTimes(pts []history.Point, r history.Range, from, to, now time.Time) 
 		ax.Lo = from.UnixMilli()
 	}
 	if !to.IsZero() {
-		ax.Hi = to.UnixMilli()
+		// a range still running (today, this week, a custom end after
+		// now) ends at the live edge: new data scrolls in as for no filter
+		ax.Hi = liveHi(ax.Hi, to.UnixMilli(), nowMs)
 	}
 	if ax.Hi < ax.Lo {
 		ax.Hi = ax.Lo
@@ -312,4 +314,13 @@ func mergeTail(old, fresh []history.Point) []history.Point {
 		return fresh
 	}
 	return mergeOlder(old, fresh)
+}
+
+// liveHi is the axis end for a filter ending at toMs: toMs for a range in
+// the past, else the live edge hi (data end or now) capped at toMs.
+func liveHi(hi, toMs, nowMs int64) int64 {
+	if toMs <= nowMs {
+		return toMs
+	}
+	return min(hi, toMs)
 }

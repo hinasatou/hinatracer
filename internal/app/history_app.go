@@ -207,10 +207,15 @@ func (a *app) exportDetail(format string) {
 	ip := a.pingIPOf(a.detailSnap)
 	a.detailExportMsg = i18n.T("history.export.working")
 	src := a.historySource()
+	a.taskbarBeginIndeterminate()
 	safeGo("history.export", func() {
 		data := historyExportFrom(src, key, target, alias, ip, r, format)
 		msg := saveExportFile(historyFileName(target, r, format), data)
-		_ = a.run(func() { a.detailExportMsg = msg; a.redrawDetail() })
+		_ = a.run(func() {
+			a.taskbarEnd(false)
+			a.detailExportMsg = msg
+			a.redrawDetail()
+		})
 	})
 }
 

@@ -152,7 +152,7 @@ func (a *app) webRoutesRangeStats(mux *http.ServeMux) {
 // ---- GUI --------------------------------------------------------------------
 
 // rangeRefresh is how often a range reaching up to now is recomputed.
-const rangeRefresh = 15 * time.Second
+const rangeRefresh = 5 * time.Second
 
 // rangeFilter is one table's time filter (Ping, HTTP or Trace page).
 type rangeFilter struct {
@@ -168,6 +168,9 @@ type rangeFilter struct {
 	querying bool
 	queryAt  time.Time
 	err      string
+
+	resGen, baseGen int                // result generation, base's
+	base            map[string]liveCtr // live counters when a row met res
 }
 
 func (f *rangeFilter) active() bool {
@@ -180,6 +183,16 @@ func (f *rangeFilter) bounds(now time.Time) (time.Time, time.Time, bool) {
 		return f.from, f.to, !f.from.IsZero() || !f.to.IsZero()
 	}
 	return timerange.Bounds(f.preset, now)
+}
+
+// live reports a filter whose range reaches now (today, this week, a
+// custom range ending later): its stats and charts keep updating.
+func (f *rangeFilter) live(now time.Time) bool {
+	if !f.active() {
+		return true
+	}
+	_, to, _ := f.bounds(now)
+	return to.IsZero() || to.After(now)
 }
 
 // query is the API query of the filter: a preset, or explicit bounds.
@@ -267,15 +280,18 @@ func (a *app) rangeKick(f *rangeFilter, kind string, tab int) {
 		return
 	}
 	q := f.query(kind, tab)
-	_, to, _ := f.bounds(time.Now())
-	live := to.IsZero() || to.After(time.Now())
+	live := f.live(time.Now())
 	if f.resFor == q && (!live || time.Since(f.queryAt) < rangeRefresh) {
 		return
 	}
 	if f.resFor == q && f.err != "" && time.Since(f.queryAt) < rangeRefresh {
 		return
 	}
+	first := f.resFor != q // live refreshes stay quiet on the taskbar
 	f.querying, f.queryAt = true, time.Now()
+	if first {
+		a.taskbarBeginIndeterminate()
+	}
 	b := a.be()
 	safeGo("range.stats", func() {
 		var res wsRangeResult
@@ -289,10 +305,14 @@ func (a *app) rangeKick(f *rangeFilter, kind string, tab int) {
 		}
 		_ = a.run(func() {
 			f.querying = false
+			if first {
+				a.taskbarEnd(err != nil)
+			}
 			if f.query(kind, tab) != q {
 				return // changed meanwhile; the next frame asks again
 			}
 			f.resFor = q
+			f.resGen++
 			f.err = ""
 			if err != nil {
 				f.err = err.Error()
@@ -321,7 +341,7 @@ func (a *app) rangeOverlayPing(src []pinger.Snapshot) []pinger.Snapshot {
 	}
 	out := make([]pinger.Snapshot, len(src))
 	for i, s := range src {
-		r := f.res.Ping[s.ID]
+		r := f.fold(idKey(s.ID), f.res.Ping[s.ID], ctrOfStats(&s.Stats))
 		overlayStats(&s.Stats, r)
 		out[i] = s
 	}
@@ -334,7 +354,11 @@ func (a *app) rangeOverlayHTTP(rows []wsHTTP) []wsHTTP {
 	if !f.ready(f.query("http", 0)) {
 		return rows
 	}
-	return overlayHTTPRows(rows, f.res.HTTP)
+	m := make(map[int]wsRangeStats, len(rows))
+	for i := range rows {
+		m[rows[i].ID] = f.fold(idKey(rows[i].ID), f.res.HTTP[rows[i].ID], ctrOfHTTP(&rows[i]))
+	}
+	return overlayHTTPRows(rows, m)
 }
 
 // overlayHTTPRows returns rows with the range stats m (by target id).
@@ -359,7 +383,8 @@ func (a *app) rangeOverlayHops(tab *traceTab, hops []traceHopView) []traceHopVie
 	}
 	byTTL := f.res.Trace[tab.ID]
 	for i := range hops {
-		overlayStats(&hops[i].Stats, byTTL[hops[i].TTL])
+		r := f.fold(hopKey(tab.ID, hops[i].TTL), byTTL[hops[i].TTL], ctrOfStats(&hops[i].Stats))
+		overlayStats(&hops[i].Stats, r)
 	}
 	return hops
 }

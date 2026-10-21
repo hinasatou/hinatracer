@@ -43,13 +43,17 @@ func TestPingMultiSelectMenu(t *testing.T) {
 	if err := tt.Click("10.0.0.1"); err != nil {
 		t.Fatal(err)
 	}
-	tt.ClickWith(ui.Ctrl, "10.0.0.2")
+	if err := tt.ClickWith(ui.Ctrl, "10.0.0.2"); err != nil {
+		t.Fatal(err)
+	}
 	tt.Frame()
 	if a.pingSel.Len() != 2 {
 		t.Fatalf("selection %d", a.pingSel.Len())
 	}
 	// Right-click a selected row keeps the selection; reduced menu.
-	tt.RightClick("10.0.0.2")
+	if err := tt.RightClick("10.0.0.2"); err != nil {
+		t.Fatal(err)
+	}
 	menu := tt.Menu()
 	want := []string{
 		i18n.Tf("ping.ctx.multi.enable", 2),
@@ -79,7 +83,9 @@ func TestPingMultiSelectMenu(t *testing.T) {
 		t.Fatalf("disabled %d", dis)
 	}
 	// Right-click an unselected row selects only it; full menu.
-	tt.RightClick("10.0.0.3:443")
+	if err := tt.RightClick("10.0.0.3:443"); err != nil {
+		t.Fatal(err)
+	}
 	menu = tt.Menu()
 	if a.pingSel.Len() != 1 || !slices.Contains(menu, i18n.T("ping.ctx.copy_host")) {
 		t.Fatalf("single menu expected: sel=%d %q", a.pingSel.Len(), menu)
@@ -91,7 +97,9 @@ func TestPingMultiSelectMenu(t *testing.T) {
 	// Multi delete.
 	tt.Key(ui.Ctrl, ui.KeyA)
 	tt.Frame()
-	tt.RightClick("10.0.0.1")
+	if err := tt.RightClick("10.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
 	if err := tt.ChooseMenuItem(i18n.Tf("ping.ctx.multi.delete", 3)); err != nil {
 		t.Fatalf("%v menu=%q", err, tt.Menu())
 	}
@@ -113,13 +121,19 @@ func TestTraceMultiSelectMenu(t *testing.T) {
 		{TTL: 3, Addr: "192.0.2.3", Stats: pinger.Stats{Success: 1}},
 	}
 	tt := ui.NewTester(a.view, 1460, 980)
-	tt.Click("192.0.2.1")
-	tt.ClickWith(ui.Shift, "192.0.2.3")
+	if err := tt.Click("192.0.2.1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ClickWith(ui.Shift, "192.0.2.3"); err != nil {
+		t.Fatal(err)
+	}
 	tt.Frame()
 	if tab.Sel.Len() != 3 {
 		t.Fatalf("sel %d", tab.Sel.Len())
 	}
-	tt.RightClick("192.0.2.3")
+	if err := tt.RightClick("192.0.2.3"); err != nil {
+		t.Fatal(err)
+	}
 	menu := tt.Menu()
 	item := i18n.Tf("trace.ctx.multi.add_ping", 2)
 	if len(menu) != 3 || menu[0] != i18n.Tf("table.copy_cols", 3) || menu[2] != item {
@@ -143,10 +157,16 @@ func TestLookupMultiSelectMenu(t *testing.T) {
 		{ID: 2, Query: "example.com:443", IP: "192.0.2.11", Status: "ready", Port: 443, PingState: "timeout"},
 	}
 	tt := ui.NewTester(a.view, 1460, 980)
-	tt.Click("192.0.2.10")
-	tt.ClickWith(ui.Ctrl, "192.0.2.11")
+	if err := tt.Click("192.0.2.10"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ClickWith(ui.Ctrl, "192.0.2.11"); err != nil {
+		t.Fatal(err)
+	}
 	tt.Frame()
-	tt.RightClick("192.0.2.11")
+	if err := tt.RightClick("192.0.2.11"); err != nil {
+		t.Fatal(err)
+	}
 	menu := tt.Menu()
 	if len(menu) != 5 || menu[0] != i18n.Tf("table.copy_cols", 2) {
 		t.Fatalf("menu %q", menu)

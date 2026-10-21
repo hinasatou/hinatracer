@@ -32,6 +32,7 @@ type app struct {
 	alerts               alertWatch // desktop alerts (notifications, tray)
 	settingsInactiveOpen bool       // remote mode: local-only settings group expanded
 	win                  *mygo.Window
+	tbProg               taskbarProgress // taskbar / Dock progress of long tasks
 
 	store *config.Store
 	cfg   config.Config

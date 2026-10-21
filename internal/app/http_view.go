@@ -843,6 +843,7 @@ func (a *app) exportHTTP(r wsHTTP, rng history.Range, format string) {
 	h.exportMsg = i18n.T("history.export.working")
 	b := a.be()
 	q := url.Values{"http": {strconv.Itoa(r.ID)}, "range": {string(rng)}}
+	a.taskbarBeginIndeterminate()
 	safeGo("http.export", func() {
 		data, err := b.Get("/api/history." + exportFormat(format) + "?" + q.Encode())
 		msg := ""
@@ -852,6 +853,7 @@ func (a *app) exportHTTP(r wsHTTP, rng history.Range, format string) {
 			msg = saveExportFile(historyFileName(r.Spec.URL, rng, format), data)
 		}
 		_ = a.run(func() {
+			a.taskbarEnd(err != nil)
 			h.exportMsg = msg
 			if h.win != nil {
 				h.win.Update(func() {})

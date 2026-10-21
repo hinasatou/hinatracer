@@ -341,10 +341,11 @@ func (a *app) rangeChart(c *ui.Context, sel *int, pts []history.Point, rng histo
 }
 
 // chartInput pans and zooms v like a stock chart: the wheel zooms at the
-// pointer (a touchpad's sideways swipe pans), a drag pans, Left/Right pan
-// a tenth of the window (Shift: a whole one), Up/Down zoom in and out,
-// Home shows the oldest data and End returns to the live edge. Keys come
-// only while the chart has the focus.
+// pointer (a touchpad's sideways swipe pans; a pinch or Ctrl+wheel on
+// Windows zooms as InputZoom), a drag pans, Left/Right pan a tenth of the
+// window (Shift: a whole one), Up/Down zoom in and out, Home shows the
+// oldest data and End returns to the live edge. Keys come only while the
+// chart has the focus.
 func chartInput(v *chartView, ev ui.InputEvent) bool {
 	ax := v.ax
 	if v.plotW <= 0 {
@@ -356,6 +357,13 @@ func chartInput(v *chartView, ev ui.InputEvent) bool {
 		anchor = v.hoverFrac
 	}
 	switch ev.Kind {
+	case ui.InputZoom:
+		// Scale 2 = twice as large (pinch out; Ctrl+wheel on Windows)
+		if ev.Scale <= 0 {
+			return false
+		}
+		v.zoom(ax, 1/float64(ev.Scale), frac(ev.X))
+		return true
 	case ui.InputScroll:
 		if ev.Precise && math.Abs(float64(ev.DX)) > math.Abs(float64(ev.DY)) {
 			v.pan(ax, float64(ev.DX/v.plotW))

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"hinatracer/internal/history"
+	"hinatracer/internal/timerange"
 )
 
 // chartRef names what a chart shows: a ping target, a traceroute hop or
@@ -136,6 +137,11 @@ func feedWant(ref chartRef, rng history.Range, filt *rangeFilter) string {
 	w := ref.id() + "|" + string(rng)
 	if filt != nil && filt.active() {
 		w += "|" + filt.query(ref.filterKind(), 0)
+		if filt.preset != timerange.Custom {
+			// a preset moves with the clock (today becomes a new day)
+			from, _, _ := filt.bounds(time.Now())
+			w += "|" + strconv.FormatInt(from.Unix(), 10)
+		}
 	}
 	return w
 }

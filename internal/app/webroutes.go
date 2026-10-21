@@ -475,6 +475,7 @@ func (a *app) webRoutes(mux *http.ServeMux) {
 		if a.dataDL != nil {
 			a.dataDL.Cancel()
 		}
+		a.taskbarClear()
 		return apiResult{OK: true}
 	}))
 

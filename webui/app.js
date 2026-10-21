@@ -462,7 +462,8 @@
     const half = probe ? 0 : bucket / 2;
     let lo = n ? ts[0] - half : now, hi = n ? Math.max(ts[n - 1] + half, now) : now;
     if (from != null) lo = from;
-    if (to != null) hi = to;
+    // a range still running ends at the live edge (data end or now)
+    if (to != null) hi = to <= now ? to : Math.min(hi, to);
     if (hi < lo) hi = lo;
     const minSpan = Math.max(CHART_MIN_BUCKETS * bucket, 1000);
     const def = Math.max(minSpan, from != null || to != null ? hi - lo : Math.min(hi - lo, CHART_DEF_BUCKETS * bucket));
@@ -920,6 +921,23 @@
     ];
   }
 
+  // liveCtr / foldLive: same as the desktop's (internal/app/range_fold.go).
+  const liveCtr = r => ({ s: r.success || 0, f: r.failure || 0, sum: (r.avg || 0) * (r.success || 0), last: r.last || 0, lastOk: r.lastOk || 0, lastFail: r.lastFail || 0 });
+  function foldLive(v, b, c) {
+    const dS = c.s - b.s, dF = c.f - b.f;
+    if (dS < 0 || dF < 0 || dS + dF === 0) return v;
+    v = Object.assign({}, v);
+    if (dS > 0) {
+      const sum = v.avg * v.success + (c.sum - b.sum);
+      if (!v.success) { v.min = v.max = v.median = c.last; } else { v.min = Math.min(v.min, c.last); v.max = Math.max(v.max, c.last); }
+      v.success += dS; v.avg = Math.max(0, sum / v.success); v.last = c.last; v.lastOk = Math.max(v.lastOk || 0, c.lastOk);
+    }
+    v.failure += dF;
+    if (dF > 0) v.lastFail = Math.max(v.lastFail || 0, c.lastFail);
+    const n = v.success + v.failure;
+    v.successRate = v.success * 100 / n; v.lossRate = v.failure * 100 / n;
+    return v;
+  }
   // ---------- time range filter (per browser tab, never saved on the server) ----------
   const RANGE_PRESETS = ['all', 'today', 'yesterday', 'thisweek', 'lastweek', 'thismonth', 'lastmonth', 'thisyear', 'lastyear', 'custom'];
   // rangeBounds: [from, to) in this browser's time zone; weeks start on Monday
@@ -1008,21 +1026,37 @@
       if (!active() || historyOff()) { if (res) { res = null; onChange(); } return; }
       const q = query();
       const b = bounds(), live = !b[1] || b[1] > new Date();
-      if (busy || !force && q === resFor && (!live || Date.now() - at < 15000)) return;
+      if (busy || !force && q === resFor && (!live || Date.now() - at < 5000)) return;
       busy = true; at = Date.now();
       try {
         const r = await fetch('/api/stats/range?' + q, { credentials: 'same-origin', cache: 'no-store' }).then(x => x.json());
         if (!r.ok) throw new Error(r.message || 'error');
-        res = r.data; resFor = q; err = '';
+        res = r.data; resFor = q; err = ''; base = new Map();
       } catch (e) { err = String(e.message || e); res = null; resFor = q; }
       busy = false;
       paint(); onChange();
     }
-    const timer = setInterval(() => { if (el.isConnected) refresh(false); else clearInterval(timer); }, 15000);
+    const timer = setInterval(() => { if (el.isConnected) refresh(false); else clearInterval(timer); }, 5000);
     // overlay: copy rows with the range's stats (same field names)
+    // While the range reaches now, the probes made since a row first met
+    // this result are folded in (foldLive), so the table moves with every
+    // probe; the next query (5 s) brings exact values.
+    let base = new Map();
     function overlay(rows, pick) {
       if (!res || !res.active || !active() || historyOff() || resFor !== query()) return rows;
-      return rows.map(r => { const v = pick(res, r); return v ? Object.assign({}, r, v) : r; });
+      const b = bounds(), live = !b || !b[1] || b[1] > new Date();
+      return rows.map(r => {
+        let v = pick(res, r);
+        if (!v) return r;
+        const key = r.ttl != null ? (tabId ? tabId() : 0) + ':' + r.ttl : String(r.id), cur = liveCtr(r);
+        if (!base.has(key)) base.set(key, cur);
+        else if (live) {
+          v = foldLive(v, base.get(key), cur);
+          if ('checks' in v) v.checks = v.success + v.failure;
+          if ('rtt' in v) v.rtt = ms(v.last, v.success > 0);
+        }
+        return Object.assign({}, r, v);
+      });
     }
     paint();
     // exportQuery: the from/to of the filter while it applies, else ''

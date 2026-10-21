@@ -52,9 +52,11 @@ const copyMaxBytes = 5 << 20
 // clipboard on the UI thread and reports a status line through done (on
 // the UI thread): 「已复制」, too large, or the error. UI thread.
 func (a *app) copyFetched(fetch func() ([]byte, error), done func(msg string)) {
+	a.taskbarBeginIndeterminate()
 	safeGo("copy.txt", func() {
 		data, err := fetch()
 		_ = a.run(func() {
+			a.taskbarEnd(err != nil)
 			switch {
 			case err != nil:
 				done(i18n.Tf("copy.failed", err.Error()))
