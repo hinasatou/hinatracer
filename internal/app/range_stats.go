@@ -289,8 +289,9 @@ func (a *app) rangeKick(f *rangeFilter, kind string, tab int) {
 	}
 	first := f.resFor != q // live refreshes stay quiet on the taskbar
 	f.querying, f.queryAt = true, time.Now()
+	tb := 0
 	if first {
-		a.taskbarBeginIndeterminate()
+		tb = a.taskbarBegin()
 	}
 	b := a.be()
 	safeGo("range.stats", func() {
@@ -305,9 +306,7 @@ func (a *app) rangeKick(f *rangeFilter, kind string, tab int) {
 		}
 		_ = a.run(func() {
 			f.querying = false
-			if first {
-				a.taskbarEnd(err != nil)
-			}
+			a.taskbarEnd(tb)
 			if f.query(kind, tab) != q {
 				return // changed meanwhile; the next frame asks again
 			}

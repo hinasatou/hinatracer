@@ -683,7 +683,7 @@ func (a *app) finishTableExport(kind string, p tableExportPick, fetch func() ([]
 	}
 	name := tableExportName(kind, p.format, time.Now())
 	a.showToast(i18n.T("history.export.working"))
-	a.taskbarBeginIndeterminate()
+	tb := a.taskbarBegin()
 	safeGo("table.export", func() {
 		data, err := fetch()
 		msg := ""
@@ -693,7 +693,7 @@ func (a *app) finishTableExport(kind string, p tableExportPick, fetch func() ([]
 			msg = saveExportFile(name, data)
 		}
 		_ = a.run(func() {
-			a.taskbarEnd(err != nil)
+			a.taskbarEnd(tb)
 			a.showToast(msg)
 			a.requestUIUpdate()
 		})

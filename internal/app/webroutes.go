@@ -418,11 +418,7 @@ func (a *app) webRoutes(mux *http.ServeMux) {
 		return apiResult{OK: true}
 	}))
 	mux.Handle("POST /api/settings/reloaddb", mutate(a, func(struct{}) apiResult {
-		safeGo("web.reloaddb", func() {
-			a.reloadDBs()
-			a.refreshAllHostMeta()
-			a.requestUIUpdate()
-		})
+		a.reloadDBsAsync("web.reloaddb")
 		return apiResult{OK: true}
 	}))
 	// Omitted fields keep their value.
@@ -475,7 +471,7 @@ func (a *app) webRoutes(mux *http.ServeMux) {
 		if a.dataDL != nil {
 			a.dataDL.Cancel()
 		}
-		a.taskbarClear()
+		a.taskbarEnd(a.dlTB)
 		return apiResult{OK: true}
 	}))
 

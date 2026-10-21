@@ -2,61 +2,107 @@ package app
 
 import "github.com/egoist/mygo"
 
-// taskbarProgress tracks concurrent long tasks and mirrors them onto the
-// main window's taskbar / Dock / launcher progress bar. UI thread only.
+// taskbarProgress mirrors long tasks (exports, downloads, the updater, …)
+// onto the main window's taskbar / Dock / launcher progress bar. Each task
+// holds a token; the most recently begun task still running is shown, and
+// the bar clears when the last one ends, so overlapping tasks never leave
+// it stuck. UI thread only (goroutines go through a.run / tbRun).
 type taskbarProgress struct {
-	n     int     // active tasks
-	value float64 // 0..1 while determined; <0 = indeterminate
+	next  int
+	tasks []tbTask // in begin order
+	shown string   // last state sent, to skip repeats
 }
 
-// taskbarBeginIndeterminate marks a long task of unknown length (export,
-// first range query). Pair every begin with taskbarEnd.
-func (a *app) taskbarBeginIndeterminate() {
-	a.tbProg.n++
-	a.tbProg.value = -1
+type tbTask struct {
+	id    int
+	value float64 // 0..1, <0 = indeterminate
+}
+
+// taskbarBegin starts a task of unknown length and returns its token.
+func (a *app) taskbarBegin() int {
+	a.tbProg.next++
+	id := a.tbProg.next
+	a.tbProg.tasks = append(a.tbProg.tasks, tbTask{id: id, value: -1})
+	a.syncTaskbar()
+	return id
+}
+
+// taskbarSet sets task id's fraction done (0..1; <0 = indeterminate).
+// Unknown or ended tokens are ignored.
+func (a *app) taskbarSet(id int, v float64) {
+	for i := range a.tbProg.tasks {
+		if a.tbProg.tasks[i].id == id {
+			if v >= 0 {
+				v = min(v, 1)
+			}
+			a.tbProg.tasks[i].value = v
+			a.syncTaskbar()
+			return
+		}
+	}
+}
+
+// taskbarEnd ends task id (success, error or cancel alike). Ending a
+// token twice, or 0, is harmless.
+func (a *app) taskbarEnd(id int) {
+	t := a.tbProg.tasks[:0]
+	for _, k := range a.tbProg.tasks {
+		if k.id != id {
+			t = append(t, k)
+		}
+	}
+	a.tbProg.tasks = t
 	a.syncTaskbar()
 }
 
-// taskbarSetValue updates the fraction done (0..1). No-op with no task.
-func (a *app) taskbarSetValue(v float64) {
-	if a.tbProg.n == 0 {
-		return
-	}
-	a.tbProg.value = max(0, min(1, v))
-	a.syncTaskbar()
-}
-
-// taskbarEnd finishes one task and clears the bar when none remain.
-// failed is reserved for a red flash; we clear either way so the bar
-// never sticks after an error or cancel.
-func (a *app) taskbarEnd(failed bool) {
-	_ = failed
-	if a.tbProg.n > 0 {
-		a.tbProg.n--
-	}
-	if a.tbProg.n == 0 {
-		a.taskbarClear()
-		return
-	}
-	a.syncTaskbar()
-}
-
-// taskbarClear removes the bar (cancel, done, or quit).
+// taskbarClear ends every task and removes the bar (before quitting).
 func (a *app) taskbarClear() {
-	a.tbProg = taskbarProgress{value: -1}
-	if a.win != nil {
-		a.win.SetProgressBar(mygo.ProgressBar{})
+	a.tbProg.tasks = nil
+	a.syncTaskbar()
+}
+
+// tbRun runs fn on the UI thread from a goroutine (directly without a window).
+func (a *app) tbRun(fn func()) {
+	if a.win == nil {
+		fn()
+		return
 	}
+	_ = a.run(fn)
+}
+
+// taskbarState is what the bar shows: "" none, "i" indeterminate, else
+// the fraction of the newest task.
+func (p *taskbarProgress) state() (string, float64) {
+	if len(p.tasks) == 0 {
+		return "", 0
+	}
+	k := p.tasks[len(p.tasks)-1]
+	if k.value < 0 {
+		return "i", 0
+	}
+	return "v", k.value
 }
 
 func (a *app) syncTaskbar() {
+	st, v := a.tbProg.state()
+	key := st
+	if st == "v" {
+		key = st + string(rune('0'+int(v*100)/10)) + string(rune('0'+int(v*100)%10))
+	}
+	if key == a.tbProg.shown {
+		return
+	}
+	a.tbProg.shown = key
 	w := a.win
-	if w == nil || a.tbProg.n == 0 {
+	if w == nil {
 		return
 	}
-	if a.tbProg.value < 0 {
+	switch st {
+	case "":
+		w.SetProgressBar(mygo.ProgressBar{})
+	case "i":
 		w.SetProgressBar(mygo.ProgressBar{State: mygo.ProgressIndeterminate})
-		return
+	default:
+		w.SetProgressBar(mygo.ProgressBar{State: mygo.ProgressNormal, Value: v})
 	}
-	w.SetProgressBar(mygo.ProgressBar{Value: a.tbProg.value})
 }

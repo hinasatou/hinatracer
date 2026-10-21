@@ -1376,11 +1376,7 @@ func (a *app) viewLocalOnlySettings(c *ui.Context) {
 				a.saveSettings()
 			}
 			if ui.Button(c, i18n.T("settings.reload")).Clicked() {
-				safeGo("db.reload", func() {
-					a.reloadDBs()
-					a.refreshAllHostMeta()
-					a.requestUIUpdate()
-				})
+				a.reloadDBsAsync("db.reload")
 			}
 		})
 		if _, dbStat := a.getDBStatus(); dbStat != "" {
@@ -1422,7 +1418,7 @@ func (a *app) viewLocalOnlySettings(c *ui.Context) {
 			}
 			if cbtn.Clicked() && running {
 				a.dataDL.Cancel()
-				a.taskbarClear()
+				a.taskbarEnd(a.dlTB)
 			}
 		})
 		if a.dataDL != nil {

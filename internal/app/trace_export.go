@@ -326,6 +326,7 @@ func (a *app) exportTrace(id int, format string) {
 	}
 	b := a.be()
 	a.showToast(i18n.T("history.export.working"))
+	tb := a.taskbarBegin()
 	safeGo("trace.export", func() {
 		data, err := b.Get("/api/trace/export?" + q)
 		msg := ""
@@ -335,6 +336,7 @@ func (a *app) exportTrace(id int, format string) {
 			msg = saveExportFile(name, data)
 		}
 		_ = a.run(func() {
+			a.taskbarEnd(tb)
 			a.showToast(msg)
 			a.requestUIUpdate()
 		})

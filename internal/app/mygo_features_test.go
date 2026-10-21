@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"hinatracer/internal/history"
+	"hinatracer/internal/update"
 )
 
 func TestChartInputZoomPinch(t *testing.T) {
@@ -83,33 +84,88 @@ func TestChartTesterWheelAndPinch(t *testing.T) {
 	}
 }
 
-func TestTaskbarProgressBeginEnd(t *testing.T) {
+func TestTaskbarProgressTokens(t *testing.T) {
 	a := &app{}
-	a.taskbarBeginIndeterminate()
-	if a.tbProg.n != 1 || a.tbProg.value >= 0 {
-		t.Fatalf("begin: %+v", a.tbProg)
+	if st, _ := a.tbProg.state(); st != "" {
+		t.Fatal("idle bar shown")
 	}
-	a.taskbarSetValue(0.4)
-	if math.Abs(a.tbProg.value-0.4) > 1e-9 {
-		t.Fatalf("value %v", a.tbProg.value)
+	exp := a.taskbarBegin() // an export
+	dl := a.taskbarBegin()  // a download on top
+	a.taskbarSet(dl, 0.4)
+	if st, v := a.tbProg.state(); st != "v" || math.Abs(v-0.4) > 1e-9 {
+		t.Fatalf("newest task wins: %s %v", st, v)
 	}
-	a.taskbarBeginIndeterminate() // second task resets to indeterminate
-	if a.tbProg.n != 2 || a.tbProg.value >= 0 {
-		t.Fatalf("second begin: %+v", a.tbProg)
+	a.taskbarSet(exp, 0.9) // older task: kept, not shown
+	if _, v := a.tbProg.state(); math.Abs(v-0.4) > 1e-9 {
+		t.Fatal("older task took the bar")
 	}
-	a.taskbarEnd(false)
-	if a.tbProg.n != 1 {
-		t.Fatalf("after one end: %d", a.tbProg.n)
+	a.taskbarEnd(dl)
+	if st, v := a.tbProg.state(); st != "v" || math.Abs(v-0.9) > 1e-9 {
+		t.Fatalf("after newest ends: %s %v", st, v)
 	}
-	a.taskbarEnd(true)
-	if a.tbProg.n != 0 {
-		t.Fatalf("stuck n=%d", a.tbProg.n)
+	a.taskbarSet(exp, -1)
+	if st, _ := a.tbProg.state(); st != "i" {
+		t.Fatal("indeterminate")
 	}
-	a.taskbarSetValue(0.9) // no-op with no task
-	if a.tbProg.n != 0 {
-		t.Fatal("set with no task")
+	a.taskbarSet(exp, 5)
+	if _, v := a.tbProg.state(); v != 1 {
+		t.Fatal("clamp")
 	}
+	a.taskbarEnd(exp)
+	a.taskbarEnd(exp) // twice: harmless
+	a.taskbarEnd(0)
+	a.taskbarSet(exp, 0.5) // ended token: ignored
+	if st, _ := a.tbProg.state(); st != "" || len(a.tbProg.tasks) != 0 {
+		t.Fatal("bar stuck")
+	}
+	x, y := a.taskbarBegin(), a.taskbarBegin()
+	_, _ = x, y
 	a.taskbarClear()
+	if st, _ := a.tbProg.state(); st != "" {
+		t.Fatal("clear")
+	}
+}
+
+func TestUpdaterTaskbarProgress(t *testing.T) {
+	a := &app{}
+	other := a.taskbarBegin()
+	tbStart(a)
+	tbUpdProgress(a, update.Progress{Bytes: 25, Total: 100})
+	if st, v := a.tbProg.state(); st != "v" || math.Abs(v-0.25) > 1e-9 {
+		t.Fatalf("known length: %s %v", st, v)
+	}
+	tbUpdProgress(a, update.Progress{Bytes: 25, Total: -1})
+	if st, _ := a.tbProg.state(); st != "i" {
+		t.Fatal("unknown length must be indeterminate")
+	}
+	tbDone(a)
+	tbDone(a) // success path ends before launch, the deferred one again
+	if a.updTB != 0 || len(a.tbProg.tasks) != 1 || a.tbProg.tasks[0].id != other {
+		t.Fatalf("updater left %+v", a.tbProg.tasks)
+	}
+	tbStart(a)
+	tbStart(a) // a restart replaces its own token
+	if len(a.tbProg.tasks) != 2 {
+		t.Fatalf("restart leaked a token: %+v", a.tbProg.tasks)
+	}
+	tbDone(a)
+	a.taskbarEnd(other)
+	if len(a.tbProg.tasks) != 0 {
+		t.Fatal("stuck")
+	}
+}
+
+func TestTaskbarCoversLongTasks(t *testing.T) {
+	for f, want := range map[string]string{
+		"updater_ui.go":   "defer tbDone(a)",
+		"trace_export.go": "a.taskbarEnd(tb)",
+		"app.go":          "defer a.tbRun(func() { a.taskbarEnd(tb) })",
+	} {
+		b, err := os.ReadFile(f)
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("%s lacks %q", f, want)
+		}
+	}
 }
 
 func TestTrayOptionsID(t *testing.T) {

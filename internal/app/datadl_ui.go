@@ -65,12 +65,13 @@ func (a *app) startDataDownload() {
 	cfgDir := a.appDataDir()
 	specs := datadl.DefaultSpecs(a.draftIPDB, a.draftGeoIP, a.draftASN)
 	a.dataDLStatus = i18n.T("settings.dl_all.status.running")
-	a.taskbarBeginIndeterminate()
+	a.taskbarEnd(a.dlTB)
+	a.dlTB = a.taskbarBegin()
 	ok := a.dataDL.Start(context.Background(), cfgDir, specs, func(results []datadl.Result) {
 		a.onDataDownloadDone(results)
 	})
 	if !ok {
-		a.taskbarEnd(false)
+		a.taskbarEnd(a.dlTB)
 		a.dataDLStatus = i18n.T("settings.dl_all.status.busy")
 	}
 	a.requestUIUpdate()
@@ -83,7 +84,7 @@ func (a *app) onDataDownloadDone(results []datadl.Result) {
 	var okN int
 	_ = a.run(func() {
 		okN = a.applyDataDownloadResults(results)
-		a.taskbarEnd(false)
+		a.taskbarEnd(a.dlTB)
 	})
 	if okN > 0 {
 		a.reloadDBs()
@@ -159,7 +160,7 @@ func (a *app) applyDataDownloadResults(results []datadl.Result) int {
 
 // syncDataDLTaskbar mirrors download progress onto the taskbar (UI thread).
 func (a *app) syncDataDLTaskbar() {
-	if a.dataDL == nil || !a.dataDL.Running() || a.tbProg.n == 0 {
+	if a.dataDL == nil || !a.dataDL.Running() || a.dlTB == 0 {
 		return
 	}
 	var sumPct, n float64
@@ -172,5 +173,5 @@ func (a *app) syncDataDLTaskbar() {
 	if n == 0 {
 		return // keep indeterminate
 	}
-	a.taskbarSetValue(sumPct / (n * 100))
+	a.taskbarSet(a.dlTB, sumPct/(n*100))
 }

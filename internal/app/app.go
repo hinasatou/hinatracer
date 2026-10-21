@@ -33,6 +33,7 @@ type app struct {
 	settingsInactiveOpen bool       // remote mode: local-only settings group expanded
 	win                  *mygo.Window
 	tbProg               taskbarProgress // taskbar / Dock progress of long tasks
+	dlTB, updTB          int             // taskbar tokens: data download, updater
 
 	store *config.Store
 	cfg   config.Config
@@ -891,11 +892,7 @@ func (a *app) saveSettings() {
 	a.cfg.GeoIPPath = strings.TrimSpace(a.draftGeoIP)
 	a.cfg.ASNPath = strings.TrimSpace(a.draftASN)
 	a.persist() // before reloading: reloadDBs reads the paths from the store
-	safeGo("db.reload", func() {
-		a.reloadDBs()
-		a.refreshAllHostMeta()
-		a.requestUIUpdate()
-	})
+	a.reloadDBsAsync("db.reload")
 }
 
 func (a *app) applyLanguage(name string) {
@@ -909,11 +906,7 @@ func (a *app) applyLanguage(name string) {
 	a.cfg.Language = i18n.Language()
 	a.themeName = themeDisplayName(a.cfg.Theme)
 	a.persist()
-	safeGo("db.reload", func() {
-		a.reloadDBs()
-		a.refreshAllHostMeta()
-		a.requestUIUpdate()
-	})
+	a.reloadDBsAsync("db.reload")
 }
 
 func (a *app) applyTheme(name string) {
@@ -1461,4 +1454,16 @@ func clampedHeight(h, minH int) int {
 		return minH
 	}
 	return h
+}
+
+// reloadDBsAsync reloads the IP databases off the UI thread with taskbar
+// progress (indeterminate). Call on the UI thread.
+func (a *app) reloadDBsAsync(name string) {
+	tb := a.taskbarBegin()
+	safeGo(name, func() {
+		defer a.tbRun(func() { a.taskbarEnd(tb) })
+		a.reloadDBs()
+		a.refreshAllHostMeta()
+		a.requestUIUpdate()
+	})
 }

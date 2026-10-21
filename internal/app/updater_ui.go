@@ -154,11 +154,14 @@ func (a *app) startUpdateInstall() {
 		s.phase, s.err, s.cancel, s.progress = "downloading", "", cancel, update.Progress{}
 	})
 	rel := snap.rel
+	tbStart(a)
 	safeGo("update.install", func() {
 		defer cancel()
+		defer tbDone(a) // error, cancel, saved: the bar never sticks
 		work := filepath.Join(os.TempDir(), "hinatracer-update")
 		out, err := update.Run(ctx, update.NewHTTPClient(0), rel, plan, work, func(p update.Progress) {
 			a.updSet(func(s *updState) { s.progress = p })
+			tbUpdProgress(a, p)
 		})
 		if err != nil {
 			msg := err.Error()
@@ -180,6 +183,7 @@ func (a *app) startUpdateInstall() {
 			return
 		}
 		a.updSet(func(s *updState) { s.phase, s.cancel = "ready", nil })
+		tbDone(a) // before launching the installer and quitting
 		// Save config/state before restarting.
 		a.flushLayouts()
 		a.persistNow()
@@ -438,4 +442,27 @@ func updChecksumMsg(err error) (string, bool) {
 		detail = i18n.Tf("update.err.checksum_mismatch", ce.Name, short(ce.Want), short(ce.Got))
 	}
 	return i18n.Tf("update.err.checksum", detail), true
+}
+
+// Taskbar progress of the update download (in addition to the in-app
+// progress). tbStart runs on the UI thread; the others from the download
+// goroutine.
+func tbStart(a *app) {
+	a.taskbarEnd(a.updTB)
+	a.updTB = a.taskbarBegin()
+}
+
+func tbUpdProgress(a *app, p update.Progress) {
+	v := -1.0
+	if p.Total > 0 {
+		v = float64(p.Bytes) / float64(p.Total)
+	}
+	a.tbRun(func() { a.taskbarSet(a.updTB, v) })
+}
+
+func tbDone(a *app) {
+	a.tbRun(func() {
+		a.taskbarEnd(a.updTB)
+		a.updTB = 0
+	})
 }
