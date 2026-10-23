@@ -97,7 +97,7 @@ func (a *app) webRoutesHistory(mux *http.ServeMux) {
 			writeJSON(w, 404, apiResult{Message: "not found"})
 			return
 		}
-		writeJSON(w, 200, apiResult{OK: true, Data: map[string]any{"key": key, "range": rng, "points": pts}})
+		writeJSON(w, 200, apiResult{OK: true, Data: map[string]any{"key": key, "range": rng, "points": pts, "resetAt": a.hist.ResetAt(key)}})
 	})
 	export := func(format string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {

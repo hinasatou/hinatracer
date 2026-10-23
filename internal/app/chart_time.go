@@ -83,7 +83,12 @@ func chartGapMs(r history.Range, bucket, median int64) int64 {
 	if r == history.RangeProbe {
 		return max(3*median, 1500)
 	}
-	return max(bucket*3/2, 3*median)
+	// Buckets are on a fixed grid: neighbours are one bucket apart, so a
+	// missing bucket (nothing was recorded then) is a gap. The median
+	// spacing must not widen it: with few, scattered buckets it is several
+	// buckets long and joined hours that have no data between them.
+	_ = median
+	return bucket * 3 / 2
 }
 
 // layoutTimes returns each point's axis time, the gaps before each point

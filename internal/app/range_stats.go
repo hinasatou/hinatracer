@@ -165,6 +165,7 @@ type rangeFilter struct {
 
 	res      wsRangeResult
 	resFor   string
+	resEpoch int64 // histEpoch of res (a reset makes it stale)
 	querying bool
 	queryAt  time.Time
 	err      string
@@ -281,10 +282,11 @@ func (a *app) rangeKick(f *rangeFilter, kind string, tab int) {
 	}
 	q := f.query(kind, tab)
 	live := f.live(time.Now())
-	if f.resFor == q && (!live || time.Since(f.queryAt) < rangeRefresh) {
+	epoch := histEpoch.Load()
+	if f.resFor == q && f.resEpoch == epoch && (!live || time.Since(f.queryAt) < rangeRefresh) {
 		return
 	}
-	if f.resFor == q && f.err != "" && time.Since(f.queryAt) < rangeRefresh {
+	if f.resFor == q && f.resEpoch == epoch && f.err != "" && time.Since(f.queryAt) < rangeRefresh {
 		return
 	}
 	first := f.resFor != q // live refreshes stay quiet on the taskbar
@@ -310,7 +312,7 @@ func (a *app) rangeKick(f *rangeFilter, kind string, tab int) {
 			if f.query(kind, tab) != q {
 				return // changed meanwhile; the next frame asks again
 			}
-			f.resFor = q
+			f.resFor, f.resEpoch = q, epoch
 			f.resGen++
 			f.err = ""
 			if err != nil {

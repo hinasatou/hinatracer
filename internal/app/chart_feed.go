@@ -134,7 +134,7 @@ func (f *chartFeed) ptrs() feedPtrs {
 
 // feedWant is what a feed's points must be for: target, range, filter.
 func feedWant(ref chartRef, rng history.Range, filt *rangeFilter) string {
-	w := ref.id() + "|" + string(rng)
+	w := ref.id() + "|" + string(rng) + "|r" + strconv.FormatInt(histEpoch.Load(), 10)
 	if filt != nil && filt.active() {
 		w += "|" + filt.query(ref.filterKind(), 0)
 		if filt.preset != timerange.Custom {

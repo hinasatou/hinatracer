@@ -88,6 +88,8 @@ type Store struct {
 	lastErr   string
 	totals    map[string]*Totals
 	dirty     map[string]bool
+	resets    map[string]int64 // key -> last reset this run (unix ms; a reload signal only)
+	migrating sync.WaitGroup
 }
 
 // Open returns a store. path is the SQLite file when disk saving is on.
@@ -103,6 +105,7 @@ func Open(path string, enabled bool, retainDays int) (*Store, error) {
 		s.loadRecentLocked()
 	}
 	s.loadTotalsLocked()
+	s.migrateResetsLocked()
 	s.done.Add(1)
 	go func() {
 		defer s.done.Done() // Close must never wait for ever
@@ -163,6 +166,7 @@ func (s *Store) Close() {
 	}
 	close(s.stop)
 	s.done.Wait()
+	s.migrating.Wait()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.flushLocked()
@@ -241,6 +245,7 @@ func (s *Store) Reopen(path string, enabled bool, retainDays int) error {
 		s.loadRecentLocked()
 	}
 	s.loadTotalsLocked()
+	s.migrateResetsLocked()
 	return nil
 }
 

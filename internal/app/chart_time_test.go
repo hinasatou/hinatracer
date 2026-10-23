@@ -240,3 +240,22 @@ func TestHistBounds(t *testing.T) {
 		t.Error("bad bound not ignored")
 	}
 }
+
+// Scattered hours (the app ran a little on some evenings): hours next to
+// each other connect, a missing hour always breaks the line, however
+// sparse the data (the median spacing must not widen the gap).
+func TestSparseHoursGap(t *testing.T) {
+	// 10-20 21,22; 10-21 20; 10-22 19,21,22; 10-23 20,21 (hours from 10-20 0:00)
+	hs := []int{21, 22, 44, 67, 69, 70, 92, 93}
+	pts := hourPts(hs...)
+	_, brk, ax := layoutTimes(pts, history.RangeHour, time.Time{}, time.Time{}, chartT0.Add(94*time.Hour))
+	want := []bool{false, false, true, true, true, false, true, false}
+	for i := range want {
+		if brk[i] != want[i] {
+			t.Fatalf("brk = %v, want %v (gap %d ms)", brk, want, ax.Gap)
+		}
+	}
+	if g := chartGapMs(history.RangeHour, 3_600_000, 22*3_600_000); g != 5_400_000 {
+		t.Errorf("hour gap %d, want 1.5 h whatever the median", g)
+	}
+}

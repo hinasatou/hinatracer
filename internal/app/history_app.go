@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -357,24 +358,52 @@ func (a *app) resetSavedStats(keys ...string) {
 	}
 }
 
-// resetPingStats resets one target (0 = all), saved totals included.
+// resetHistory permanently deletes the keys' history from before now
+// (in the background, one transaction) and then has every open chart and
+// range statistic load again.
+func (a *app) resetHistory(keys ...string) {
+	histEpoch.Add(1)
+	h := a.hist
+	if h == nil || a.remote != nil || len(keys) == 0 {
+		return
+	}
+	now := time.Now()
+	safeGo("history.reset", func() {
+		if err := h.ResetHistory(now, keys...); err != nil {
+			log.Printf("history reset: %v", err)
+		}
+		histEpoch.Add(1) // reload what was fetched while it ran
+	})
+}
+
+// histEpoch counts resets; it is part of every chart's want key.
+var histEpoch atomic.Int64
+
+// resetPingStats resets one target (0 = all), saved totals and the
+// target's chart history included.
 func (a *app) resetPingStats(id int) {
+	var keys []string
 	for _, s := range a.pingMgr.Snapshots() {
 		if id == 0 || s.ID == id {
+			keys = append(keys, histKeyPing(s.Host))
 			if a.remote == nil {
 				a.resetSavedStats(histKeyPing(s.Host))
 			}
 		}
 	}
 	a.pingMgr.ResetStats(id)
+	a.resetHistory(keys...)
 }
 
 // resetHTTPStats resets one HTTP target (0 = all), saved totals included.
 func (a *app) resetHTTPStats(id int) {
+	var keys []string
 	for _, s := range a.httpMgr.Snapshots() {
 		if id == 0 || s.ID == id {
 			a.resetSavedStats(histKeyHTTP(s.Spec.URL))
+			keys = append(keys, histKeyHTTP(s.Spec.URL))
 		}
 	}
 	a.httpMgr.ResetStats(id)
+	a.resetHistory(keys...)
 }

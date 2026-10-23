@@ -456,7 +456,9 @@
     });
     const med = medianStep(ts);
     if (probe || !bucket) bucket = med || 1000;
-    let gap = probe ? Math.max(3 * med, 1500) : Math.max(bucket * 1.5, 3 * med);
+    // buckets sit on a fixed grid: a missing bucket is a gap (the median
+    // spacing of scattered buckets must not join them)
+    let gap = probe ? Math.max(3 * med, 1500) : bucket * 1.5;
     if (!timed) gap = Infinity;
     const brk = ts.map((t, i) => i > 0 && t - ts[i - 1] > gap);
     const half = probe ? 0 : bucket / 2;
@@ -772,7 +774,9 @@
         if (wantKey() !== want) return;
         const fresh = (j.data && j.data.points) || [];
         if (ptsFor === want && pts && pts.length && fresh.length) {
-          pts = pts.filter(p => p.at < fresh[0].at).concat(fresh); // keep the older pages
+          // keep the older pages, but none from before a stats reset
+          const ra = (j.data && j.data.resetAt) || 0;
+          pts = pts.filter(p => p.at < fresh[0].at && new Date(p.at).getTime() >= ra).concat(fresh);
         } else { pts = fresh; more = fresh.length >= CHART_FETCH; }
         ptsFor = want;
         if (!host.querySelector('.xh-tip:not([hidden])') && !drag) draw();
