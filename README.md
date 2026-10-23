@@ -70,6 +70,10 @@ All off by default, under **Settings → Desktop alerts** (desktop app only):
 - **Remote data source**: the desktop app can show and control another HinaTracer, for example a Linux server.
 - **Command line** and **MCP** for scripts and AI assistants.
 
+### Appearance
+- **Glass look**: floating panes on a soft gradient, with an acrylic background on Windows 11 where supported and a solid gradient elsewhere. On Windows the title bar is drawn by HinaTracer and supports Windows 11 snap layouts. **Settings** and **About** are the icons at the bottom-left of the sidebar.
+- **Settings → Appearance → Color theme**: 6 color themes (Sakura, Mint, Ocean, Sunset, Graphite, Matcha), each in light and dark. Applies immediately and is remembered.
+
 ### Other
 - Update checker (stable or pre-release channel) that downloads, verifies and installs new versions.
 - 中文(简体), 中文(繁體), 日本語 and English, plus your own language packs; light, dark or system theme.
@@ -154,6 +158,8 @@ or the `HINATRACER_WEB_PASSWORD` environment variable. The password is stored on
 **API tokens.** Create tokens on the WebUI page with role **Admin** (full access) or **Guest** (read only). A token is shown only once; lost tokens can only be revoked and replaced.
 
 **Language.** **Settings → Appearance → My language** applies to this browser only (anyone, including guests; **Follow default** clears it). Admins also set **Default language**, which is saved in the config.
+
+**Color theme.** The WebUI has the same glass look and color themes. Admins set the **Default color theme** (saved in the config and also used by the desktop app). In every browser, including guests, **Settings → Appearance → My color theme** and **My appearance** (light / dark) can follow the default or pick their own; the choice is saved in that browser only.
 
 ## Remote data source
 

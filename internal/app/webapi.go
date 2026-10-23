@@ -10,6 +10,7 @@ import (
 
 	"hinatracer/i18n"
 	"hinatracer/internal/api"
+	"hinatracer/internal/config"
 	"hinatracer/internal/flagx"
 	"hinatracer/internal/mcp"
 	"hinatracer/internal/pinger"
@@ -95,6 +96,7 @@ func (a *app) webBuildState() wsState {
 	st.IPDB, st.GeoIP, st.ASN = a.draftIPDB, a.draftGeoIP, a.draftASN
 	st.AutoStartPing, st.AutoStartTrace, st.AutoStartHTTP = a.cfg.AutoStartPing, a.cfg.AutoStartTrace, a.cfg.AutoStartHTTP
 	st.Theme = a.cfg.Theme
+	st.Palette = config.NormalizePalette(a.cfg.Palette)
 	if st.Theme == "" {
 		st.Theme = "system"
 	}

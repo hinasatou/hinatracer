@@ -494,10 +494,6 @@ func (a *app) jumpToTrace(host string) {
 		return
 	}
 	a.nav = "trace"
-	if a.detailWin != nil {
-		a.detailWin.Close()
-		a.detailWin = nil
-	}
 	if a.remote != nil {
 		// the server finds or opens the tab and starts it; follow it
 		a.remote.Enqueue("/api/ping/trace", map[string]any{"hosts": []string{host}}, nil)
@@ -574,12 +570,11 @@ func (a *app) openHopDetail(h traceHopView) {
 		a.pingRDNS[key] = h.RDNS
 		a.pingRDNSMu.Unlock()
 	}
-	a.detailIsHop = true
-	a.detailHopTTL = h.TTL
+	tabID := 0
 	if tab := a.activeTrace(); tab != nil {
-		a.detailHopTab = tab.ID
+		tabID = tab.ID
 	}
-	a.openDetailWindow(snap)
+	a.openDetailWindow(snap, true, h.TTL, tabID)
 }
 
 // traceTabsCanStartAll reports whether any stopped tab has a non-empty host.

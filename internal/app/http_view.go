@@ -35,7 +35,17 @@ type httpUI struct {
 	editID   int
 	ed       httpEdit
 
+	// HTTP detail windows, one per target; *httpDet is the one being drawn
+	// (UI thread only), dets every open one.
+	*httpDet
+	dets []*httpDet
+}
+
+// httpDet is one HTTP detail window's state.
+type httpDet struct {
+	open      bool
 	win       *mygo.Window
+	fit       paneFit // glass: pane content vs window height
 	detailID  int
 	rng       int
 	pts       []history.Point
@@ -670,30 +680,124 @@ const httpDetailWinW = 720
 var openHTTPDetailFn = (*app).openHTTPDetail
 
 func (a *app) openHTTPDetail(id int) {
-	h := &a.http
-	h.detailID = id
-	h.pts, h.ptsFor, h.exportMsg = nil, "", ""
-	if h.win != nil {
-		h.win.Focus()
-		h.win.Update(func() {})
-		a.kickHTTPQuery(true)
-		return
+	for _, d := range a.http.dets {
+		if d.open && d.detailID == id {
+			a.http.httpDet = d
+			if d.win != nil {
+				if r, ok := a.httpDetailRow(); ok {
+					d.win.SetTitle(httpDetailTitle(r))
+				}
+				d.win.Focus()
+			}
+			a.kickHTTPQuery(true)
+			a.redrawHTTPDetail(d)
+			return
+		}
 	}
-	w := mygo.NewWindow(mygo.WindowOptions{
-		Title:     i18n.T("http.detail.title"),
+	var last *mygo.Window
+	if n := len(a.http.dets); n > 0 {
+		last = a.http.dets[n-1].win
+	}
+	d := &httpDet{open: true, detailID: id}
+	if a.http.httpDet != nil {
+		d.rng = a.http.httpDet.rng // the last chosen granularity
+	}
+	a.http.httpDet = d
+	a.http.dets = append(a.http.dets, d)
+	title := i18n.T("http.detail.title")
+	if r, ok := a.httpDetailRow(); ok {
+		title = httpDetailTitle(r)
+	}
+	d.win = newHTTPDetailWindow(a, d, title, last)
+	a.kickHTTPQuery(true)
+}
+
+// newHTTPDetailWindow opens d's window (replaced in tests).
+var newHTTPDetailWindow = func(a *app, d *httpDet, title string, last *mygo.Window) *mygo.Window {
+	w := mygo.NewWindow(glassWindowOptions(mygo.WindowOptions{
+		Title:     title,
 		Width:     httpDetailWinW,
 		Height:    detailWinH,
-		MinWidth:  detailWinMinW,
-		MinHeight: detailWinMinH,
-		Parent:    a.win,
-		Modal:     true,
+		MinWidth:  detailMinW(),
+		MinHeight: detailMinH(),
 		StateKey:  "http-detail",
-		Content:   ui.View(a.viewHTTPDetail),
-	})
-	h.win = w
-	clampWindowHeight(w, detailWinMinH)
-	a.kickHTTPQuery(true)
-	w.OnClosed(func() { h.win = nil })
+		Content: ui.View(func(c *ui.Context) {
+			a.http.httpDet = d
+			a.viewHTTPDetail(c)
+		}),
+	}))
+	setPopupIcon(w)
+	clampWindowHeight(w, detailMinH())
+	clampWindowWidth(w, detailMinW())
+	cascadeFrom(w, last)
+	w.OnClosed(func() { a.httpDetailClosed(d) })
+	return w
+}
+
+// httpSubject names an HTTP target: its alias, else its URL's host.
+func httpSubject(r wsHTTP) string {
+	if t := strings.TrimSpace(r.Alias); t != "" {
+		return t
+	}
+	if u, err := url.Parse(r.Spec.URL); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return r.Spec.URL
+}
+
+// httpDetailTitle is the window/taskbar title of r's detail window.
+func httpDetailTitle(r wsHTTP) string { return i18n.Tf("http.detail.title_of", httpSubject(r)) }
+
+func (a *app) redrawHTTPDetail(d *httpDet) {
+	if d != nil && d.win != nil {
+		d.win.Update(func() {})
+	}
+}
+
+// httpDetailClosed forgets a detail window the user (or the app) closed.
+func (a *app) httpDetailClosed(d *httpDet) {
+	d.win, d.open = nil, false
+	for i, x := range a.http.dets {
+		if x == d {
+			a.http.dets = append(a.http.dets[:i:i], a.http.dets[i+1:]...)
+			break
+		}
+	}
+}
+
+func (a *app) closeHTTPDetail(d *httpDet) {
+	w := d.win
+	a.httpDetailClosed(d)
+	if w != nil {
+		w.Close()
+	}
+}
+
+// closeHTTPDetails closes every HTTP detail window.
+func (a *app) closeHTTPDetails() {
+	for _, d := range append([]*httpDet(nil), a.http.dets...) {
+		a.closeHTTPDetail(d)
+	}
+}
+
+// refreshHTTPDetails runs with each throttled update (UI thread): closes
+// the windows of deleted targets, refreshes the others.
+func (a *app) refreshHTTPDetails() {
+	if len(a.http.dets) == 0 {
+		return
+	}
+	rows, _ := a.httpView()
+	cur := a.http.httpDet
+	for _, d := range append([]*httpDet(nil), a.http.dets...) {
+		if indexOfID(rows, d.detailID) < 0 {
+			a.closeHTTPDetail(d)
+			continue
+		}
+		a.http.httpDet = d
+		a.kickHTTPQuery(false)
+		a.redrawHTTPDetail(d)
+	}
+	a.http.httpDet = cur
 }
 
 func (a *app) httpDetailRow() (wsHTTP, bool) {
@@ -707,7 +811,7 @@ func (a *app) httpDetailRow() (wsHTTP, bool) {
 
 // kickHTTPQuery loads chart points in the background (UI thread).
 func (a *app) kickHTTPQuery(force bool) {
-	h := &a.http
+	h := a.http.httpDet
 	f := feedPtrs{&h.rng, &h.pts, &h.ptsFor, &h.want, &h.querying, &h.queryAt, &h.more, &h.older, &h.view}
 	a.kickFeed(f, chartRef{Kind: "http", HTTPID: h.detailID}, &a.rangeHTTP, force, func() {
 		if h.win != nil {
@@ -718,19 +822,35 @@ func (a *app) kickHTTPQuery(force bool) {
 
 func (a *app) viewHTTPDetail(c *ui.Context) {
 	t := c.Theme()
-	h := &a.http
+	h := a.http.httpDet
 	r, ok := a.httpDetailRow()
-	ui.Column(c).Fill().Padding(20).Gap(12).MinWidth(0).Background(t.Background).Children(func() {
+	dark := t.Dark
+	c.SetTheme(glassTheme(dark))
+	t = c.Theme()
+	glassGround(c, dark)
+
+	body := func() {
 		if !ok {
-			ui.Text(c, i18n.T("http.detail.gone")).TextColor(t.TextMuted)
+			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).DragWindow().Children(func() {
+				ui.Text(c, i18n.T("http.detail.gone")).TextColor(t.TextMuted)
+				ui.Spacer(c)
+				glassWindowButtons(c, winOrNil(h.win))
+			})
 			return
 		}
 		a.kickHTTPQuery(false)
-		ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
-			ui.Text(c, httpLabel(r)).FontSize(17).Bold().SingleLine()
-			a.httpStatusCell(c, r)
+		// The title block (name, status, URL line) moves the window as the
+		// main window's title bar does; the buttons and the selectable
+		// URL keep their own handling.
+		ui.Column(c).Gap(12).MinWidth(0).AlignSelf(ui.Stretch).DragWindow().Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				ui.Text(c, httpLabel(r)).FontSize(17).Bold().SingleLine()
+				a.httpStatusCell(c, r)
+				ui.Spacer(c)
+				glassWindowButtons(c, winOrNil(h.win))
+			})
+			ui.Text(c, r.Spec.URL).FontSize(12).TextColor(t.TextMuted).Selectable().SingleLine()
 		})
-		ui.Text(c, r.Spec.URL).FontSize(12).TextColor(t.TextMuted).Selectable().SingleLine()
 		ui.Divider(c)
 		dash := func(v float64, ok bool) string {
 			if !ok {
@@ -811,7 +931,7 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 			from, to = time.Time{}, time.Time{}
 		}
 		h.view.reset(want)
-		title := httpLabel(r)
+		title := httpSubject(r)
 		o := chartOpts{view: &h.view, from: from, to: to, more: h.more, onPop: func() { a.openTrend(ref, title, h.rng) }}
 		if a.rangeChart(c, &h.rng, pts, rng, loading, o) {
 			a.kickHTTPQuery(true)
@@ -835,11 +955,19 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 				h.win.Close()
 			}
 		})
+		// end of the content (+ pane padding, border and root padding)
+		ui.Box(c).Height(0).Shrink(0).Draw(func(_ *ui.Painter, r ui.Rect) { h.fit.need = r.Y + 16 + 1 + 8 })
+	}
+	h.fit.apply(winOrNil(h.win), detailMinW())
+	col := ui.Column(c).Fill().Padding(8).MinWidth(0)
+	col.Draw(func(_ *ui.Painter, r ui.Rect) { h.fit.have = r.H })
+	col.Children(func() {
+		glassPaneEl(c).Grow(1).MinHeight(0).Children(body)
 	})
 }
 
 func (a *app) exportHTTP(r wsHTTP, rng history.Range, format string) {
-	h := &a.http
+	h := a.http.httpDet
 	h.exportMsg = i18n.T("history.export.working")
 	b := a.be()
 	q := url.Values{"http": {strconv.Itoa(r.ID)}, "range": {string(rng)}}
@@ -865,7 +993,7 @@ func (a *app) exportHTTP(r wsHTTP, rng history.Range, format string) {
 // copyHTTPText copies the same TXT or Markdown as the export to the
 // clipboard.
 func (a *app) copyHTTPText(r wsHTTP, rng history.Range, format string) {
-	h := &a.http
+	h := a.http.httpDet
 	h.exportMsg = i18n.T("history.export.working")
 	b := a.be()
 	q := url.Values{"http": {strconv.Itoa(r.ID)}, "range": {string(rng)}}

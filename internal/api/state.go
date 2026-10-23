@@ -147,6 +147,7 @@ type State struct {
 		AutoStartTrace     bool   `json:"autoStartTrace"`
 		AutoStartHTTP      bool   `json:"autoStartHttp"`
 		Theme              string `json:"theme"`
+		Palette            string `json:"palette"`
 		UpdateChannel      string `json:"updateChannel"`
 		UpdateCheckOnStart bool   `json:"updateCheckOnStart"`
 		UpdateSkip         string `json:"updateSkip"`

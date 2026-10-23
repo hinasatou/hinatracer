@@ -137,6 +137,14 @@ func TestWebSharedConfig(t *testing.T) {
 	if a.cfg.Theme != "dark" {
 		t.Fatal("bad theme accepted")
 	}
+	post("/api/settings/palette", map[string]any{"palette": "ocean"})
+	if a.store.Get().Palette != "ocean" || glassPal(false).Accent != glassPalettes[2].Light.Accent {
+		t.Fatal("palette not saved/applied")
+	}
+	if _, r := post("/api/settings/palette", map[string]any{"palette": "neon"}); r.OK || a.cfg.Palette != "ocean" {
+		t.Fatal("bad palette accepted")
+	}
+	glassPaletteIdx = 0
 }
 
 func TestWebLanguageShared(t *testing.T) {

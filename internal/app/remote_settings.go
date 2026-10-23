@@ -8,13 +8,14 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"hinatracer/i18n"
+	"hinatracer/internal/config"
 	"hinatracer/internal/webserver"
 )
 
 // remoteServerUI is the draft state of the 「远程服务器设置」 card.
 type remoteServerUI struct {
 	inited                   bool
-	lang, theme              string
+	lang, theme, palette     string
 	ipdb, geoip, asn         string
 	startPing, startTrace    bool
 	startHTTP                bool
@@ -35,6 +36,7 @@ func (a *app) syncRemoteServerDraft(st wsState) {
 	s := &a.rsrv
 	s.lang = i18n.Name(st.Lang)
 	s.theme = themeDisplayName(st.Settings.Theme)
+	s.palette = i18n.T("settings.palette." + config.NormalizePalette(st.Settings.Palette))
 	s.ipdb, s.geoip, s.asn = st.Settings.IPDB, st.Settings.GeoIP, st.Settings.ASN
 	s.startPing, s.startTrace, s.startHTTP = st.Settings.AutoStartPing, st.Settings.AutoStartTrace, st.Settings.AutoStartHTTP
 	s.channel = i18n.T("update.channel.stable")
@@ -136,6 +138,23 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 					a.remoteSet("/api/settings/theme", map[string]string{"theme": themeFromDisplay(s.theme)})
 				}
 			})
+			ui.Field(c, i18n.T("remote.server.palette"), func() {
+				if ro {
+					ui.Text(c, i18n.T("settings.palette."+config.NormalizePalette(st.Settings.Palette)))
+					return
+				}
+				var opts []string
+				for _, id := range config.Palettes {
+					opts = append(opts, i18n.T("settings.palette."+id))
+				}
+				if ui.Select(c, &s.palette, opts).Changed() {
+					for _, id := range config.Palettes {
+						if i18n.T("settings.palette."+id) == s.palette {
+							a.remoteSet("/api/settings/palette", map[string]string{"palette": id})
+						}
+					}
+				}
+			}).Description(i18n.T("settings.palette_default_desc"))
 		})
 	})
 	if !ro {

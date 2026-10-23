@@ -24,73 +24,17 @@ const (
 	detailWinH    = 900
 	detailWinMinW = 560
 	detailWinMinH = 840
-	appRepoURL    = version.RepoURL
-	contentMinH   = float32(200)
-	pageTableMinH = float32(280)
+	// Glass details window: the chart pane holds the range selector, the
+	// plot (at least glassDetailPlotMinH), the time axis and the loss line.
+	glassDetailPlotMinH      = float32(120)
+	glassDetailChartPaneMinH = float32(16 + 36 + 6 + 120 + 6 + 18 + 16 + 2)
+	appRepoURL               = version.RepoURL
+	contentMinH              = float32(200)
+	pageTableMinH            = float32(280)
 )
 
 func (a *app) view(c *ui.Context) {
-	t := c.Theme()
-	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(t.Surface).Children(func() {
-		a.viewSidebar(c)
-		ui.Column(c).Grow(1).MinWidth(0).Background(t.Surface).Clip().Children(func() {
-			a.viewTopBar(c)
-			ui.Column(c).Grow(1).MinWidth(0).Padding(16, 20).Gap(14).Children(func() {
-				a.viewUpdatePanel(c)
-				a.viewConfirmResetModal(c)
-				remote := a.remote != nil
-				switch a.nav {
-				case "ping":
-					a.viewPing(c)
-				case "http":
-					a.viewHTTP(c)
-				case "iplookup":
-					a.viewIPLookup(c)
-				case "settings":
-					a.viewSettings(c)
-				case "webui":
-					if remote {
-						a.viewRemoteWebUI(c)
-					} else {
-						a.viewWebUI(c)
-					}
-				case "about":
-					a.viewAbout(c)
-				default:
-					a.viewTraceroute(c)
-				}
-			})
-		})
-	})
-}
-
-func (a *app) viewSidebar(c *ui.Context) {
-	t := c.Theme()
-	if a.nav == "" {
-		a.nav = "ping"
-	}
-	side := ui.Column(c).Width(220).Padding(16, 12).Gap(12).Shrink(0).
-		Background(t.Background).BorderWidth(0, 1, 0, 0).BorderColor(t.Border)
-	side.Children(func() {
-		// brand: a faint accent wash, fading to the sidebar
-		ui.Column(c).Gap(2).Padding(10, 10).Radius(10).Border(1, t.Accent.Alpha(0.12)).
-			LinearGradient(ui.LinearGradient{From: t.Accent.Alpha(0.16), To: t.Accent.Alpha(0.02), Angle: 120, Oklab: true}).Children(func() {
-			ui.Text(c, "HinaTracer").FontSize(17).Bold()
-			ui.Text(c, i18n.T("app.subtitle")).FontSize(11).TextColor(t.TextMuted)
-		})
-		ui.Sidebar(c, &a.nav, func() {
-			ui.SidebarSection(c, i18n.T("nav.section.features"), nil, func() {
-				ui.SidebarItem(c, "ping", nil, i18n.T("nav.ping"))
-				ui.SidebarItem(c, "http", nil, i18n.T("nav.http"))
-				ui.SidebarItem(c, "trace", nil, i18n.T("nav.trace"))
-				ui.SidebarItem(c, "iplookup", nil, i18n.T("nav.iplookup"))
-				ui.SidebarItem(c, "webui", nil, i18n.T("nav.webui"))
-				ui.SidebarItem(c, "settings", nil, i18n.T("nav.settings"))
-				ui.SidebarItem(c, "about", nil, i18n.T("nav.about"))
-			})
-		}).Grow(1)
-		ui.Text(c, "v"+appVersion).FontSize(10).TextColor(t.TextMuted).Padding(4, 8)
-	})
+	a.viewGlass(c)
 }
 
 // detailAction is an export or copy chosen in a detail window's menu.
@@ -149,8 +93,10 @@ func (a *app) viewTopBar(c *ui.Context) {
 	case "about":
 		title, sub = i18n.T("top.about.title"), i18n.T("top.about.sub")
 	}
-	ui.Row(c).Padding(14, 20).Gap(12).AlignItems(ui.Center).Background(t.Background).Shrink(0).
-		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+	bar := ui.Row(c).Padding(14, 20).Gap(12).AlignItems(ui.Center).Shrink(0)
+	bar.Padding(0, 0, 0, 0).DragWindow()
+
+	bar.Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
 			ui.Text(c, title).FontSize(16).Bold()
 			ui.Text(c, sub).FontSize(12).TextColor(t.TextMuted)
@@ -179,27 +125,12 @@ func (a *app) viewTopBar(c *ui.Context) {
 		if a.nav == "ping" && a.pingMgr.Running() {
 			statusPill(c, i18n.T("badge.monitoring"), t.Success)
 		}
+		glassWindowButtons(c, a.glassMainWin())
 	})
 }
 
 func card(c *ui.Context, body func()) ui.Element {
-	t := c.Theme()
-	shadow := ui.RGBA(0, 0, 0, 0.06)
-	if t.Dark {
-		shadow = ui.RGBA(0, 0, 0, 0.45)
-	}
-	if cardScope == scopeRemote {
-		// remote server card: accent bar on the left, tinted background
-		return ui.Row(c).Padding(16, 16, 16, 12).Gap(12).Radius(12).Background(t.Background).
-			Border(1, t.Accent.Alpha(0.35)).Shadow(0, 1, 4, 0, shadow).
-			MinWidth(0).AlignSelf(ui.Stretch).Children(func() {
-			ui.Column(c).Width(3).Radius(2).Background(t.Accent).AlignSelf(ui.Stretch)
-			ui.Column(c).Gap(12).Grow(1).MinWidth(0).Children(body)
-		})
-	}
-	return ui.Column(c).Padding(16).Gap(12).Radius(12).Background(t.Background).
-		Border(1, t.Border).Shadow(0, 1, 4, 0, shadow).
-		MinWidth(0).AlignSelf(ui.Stretch).Children(body)
+	return glassCardChildren(c, glassCard(c), body)
 }
 
 func regionCell(c *ui.Context, iso, name string) {
@@ -227,14 +158,10 @@ func clearListSelection(tbl ui.Element, selected *int) {
 }
 
 func (a *app) viewTraceroute(c *ui.Context) {
-	if a.tabStripWidth < 120 {
-		a.tabStripWidth = 200
-	}
-	ui.Split(c, &a.tabStripWidth, func() {
-		a.viewTraceTabList(c)
-	}, func() {
-		a.viewTraceContent(c)
-	}).Grow(1).MinWidth(0).MinHeight(contentMinH)
+	ui.Row(c).Gap(8).AlignItems(ui.Stretch).Grow(1).MinWidth(0).MinHeight(contentMinH).Children(func() {
+		glassPaneEl(c).Width(196).Shrink(0).Padding(12, 8).Children(func() { a.viewTraceTabList(c) })
+		ui.Column(c).Grow(1).MinWidth(0).Children(func() { a.viewTraceContent(c) })
+	})
 }
 
 func (a *app) viewTraceTabList(c *ui.Context) {
@@ -259,21 +186,23 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 	ro := a.readOnly()
 	pendingMove := [2]int{-1, -1}
 	list := ui.Column(c).Gap(8).Padding(8, 8).FillHeight().MinWidth(0)
+	list.Padding(0).Gap(4)
+
 	list.Children(func() {
-		if ro {
-			ui.Badge(c, i18n.T("remote.readonly")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
-		} else if ui.PrimaryButton(c, i18n.T("trace.tab.add")).FillWidth().Clicked() {
-			pendingAdd = true
-		}
-		ui.Row(c).Gap(6).FillWidth().Children(func() {
+		ui.Row(c).Gap(2).AlignItems(ui.Center).Padding(0, 0, 4, 4).Children(func() {
+			ui.Text(c, i18n.T("nav.trace")).FontSize(12).TextColor(t.TextMuted).Grow(1).SingleLine()
 			if ro {
+				ui.Badge(c, i18n.T("remote.readonly")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
 				return
 			}
-			if ui.Button(c, i18n.T("trace.tab.start_all")).Disabled(!traceTabsCanStartAll(tabs)).Grow(1).Clicked() {
+			if glassGhostIcon(c, icoPlay, i18n.T("trace.tab.start_all"), !traceTabsCanStartAll(tabs)) {
 				pendingStartAll = true
 			}
-			if ui.Button(c, i18n.T("trace.tab.stop_all")).Disabled(!traceTabsCanStopAll(tabs)).Grow(1).Clicked() {
+			if glassGhostIcon(c, icoStop, i18n.T("trace.tab.stop_all"), !traceTabsCanStopAll(tabs)) {
 				pendingStopAll = true
+			}
+			if glassGhostIcon(c, icoPlus, i18n.T("trace.tab.add"), false) {
+				pendingAdd = true
 			}
 		})
 		scroll := ui.Scroll(c).Grow(1).MinHeight(0).MinWidth(0)
@@ -297,9 +226,14 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 					ti := tabs[i]
 					on := i == a.traceActive
 					idx := i
-					row := ui.Row(c).Gap(8).Padding(8, 10).Radius(8).AlignItems(ui.Center).MinWidth(0)
+					// Every state shares one fixed height, padding and border width;
+					// hover/selection only change background, shadow and border colour.
+					row := ui.Row(c).Gap(8).Padding(0, 10).Radius(8).AlignItems(ui.Center).MinWidth(0).
+						Height(traceTabRowH()).Shrink(0).Border(1, ui.Color{})
+					row.Padding(0, 8, 0, 12).Radius(10)
+
 					if on {
-						row.Background(t.Surface).Border(1, t.Border)
+						row.Background(glassSelBG(t)).Shadow(0, 1, 6, 0, glassSelShadow(t))
 					} else if row.Hovered() {
 						row.Background(t.SurfaceHover)
 					}
@@ -315,19 +249,23 @@ func (a *app) viewTraceTabList(c *ui.Context) {
 							label = string(runes[:20]) + "…"
 						}
 						txt := ui.Text(c, label).FontSize(12).SingleLine().Grow(1).MinWidth(0)
-						if on {
-							txt.Bold()
-						} else {
-							txt.TextColor(t.TextMuted)
+						txt.FontSize(13)
+						if !on {
+							txt.TextColor(t.Text.Alpha(0.78))
 						}
+
+						// The close slot is always reserved at a fixed size; the ×
+						// is only drawn inside it when hovered/selected.
 						showClose := !ro && (on || row.Hovered())
-						if showClose {
-							if ui.Button(c, "×").Padding(2, 6).Clicked() {
+						cs := traceTabCloseSlot()
+						ui.Row(c).Size(cs, cs).Shrink(0).Center().Children(func() {
+							if !showClose {
+								return
+							}
+							if glassGhostIcon(c, icoX, i18n.T("trace.tab.ctx.close"), false) {
 								pendingClose = idx
 							}
-						} else {
-							ui.Box(c).Size(22, 22).Shrink(0) // keep layout stable
-						}
+						})
 					})
 					if row.Clicked() && pendingClose < 0 {
 						pendingSelect = idx
@@ -420,7 +358,10 @@ func (a *app) viewTraceContent(c *ui.Context) {
 	tab := a.activeTrace()
 	ro := a.readOnly()
 
-	ui.Column(c).Gap(14).Padding(0, 4).MinWidth(0).FillHeight().Children(func() {
+	tc := ui.Column(c).Gap(14).Padding(0, 4).MinWidth(0).FillHeight()
+	tc.Gap(8).Padding(0)
+
+	tc.Children(func() {
 		card(c, func() {
 			ui.Text(c, i18n.T("trace.target")).FontSize(13).Bold()
 			ui.Text(c, i18n.T("trace.desc")).FontSize(12).TextColor(t.TextMuted)
@@ -449,8 +390,10 @@ func (a *app) viewTraceContent(c *ui.Context) {
 						a.persist()
 					}
 				})
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(6, 10).Radius(8).
-					Background(t.Surface).Border(1, t.Border).Children(func() {
+				ivl := ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(6, 10).Radius(8)
+				ivl.Padding(0, 8, 0, 0)
+
+				ivl.Children(func() {
 					ui.Text(c, i18n.T("trace.interval")).FontSize(12).TextColor(t.TextMuted)
 					if ui.NumberInput(c, &tab.Interval, 0.2, 3600, 0.5).Disabled(ro).Changed() {
 						a.applyTraceInterval(tab)
@@ -732,8 +675,8 @@ func (a *app) viewPing(c *ui.Context) {
 		}
 		ui.Text(c, i18n.T("ping.add_title")).FontSize(13).Bold()
 		ui.Row(c).Gap(10).AlignItems(ui.End).Wrap().MinWidth(0).Children(func() {
-			ui.TextInput(c, &a.pingHost).Placeholder(i18n.T("ping.host_ph")).Label(i18n.T("ping.host")).Width(220)
-			ui.TextInput(c, &a.pingAlias).Placeholder(i18n.T("ping.alias_ph")).Label(i18n.T("ping.alias")).Width(140)
+			ui.TextInput(c, &a.pingHost).Placeholder(i18n.T("ping.host_ph")).Label(i18n.T("ping.host")).Width(glassPick(220, 300))
+			ui.TextInput(c, &a.pingAlias).Placeholder(i18n.T("ping.alias_ph")).Label(i18n.T("ping.alias")).Width(glassPick(140, 180))
 			if ui.PrimaryButton(c, i18n.T("ping.add")).Clicked() {
 				a.addPingTarget()
 			}
@@ -747,8 +690,10 @@ func (a *app) viewPing(c *ui.Context) {
 		ui.Column(c).Gap(8).MinWidth(0).Children(func() {
 			ui.Text(c, i18n.T("ping.control")).FontSize(13).Bold()
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(6, 10).Radius(8).
-					Background(t.Surface).Border(1, t.Border).Children(func() {
+				ivl := ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(6, 10).Radius(8)
+				ivl.Padding(0, 8, 0, 0)
+
+				ivl.Children(func() {
 					ui.Text(c, i18n.T("ping.interval")).FontSize(12).TextColor(t.TextMuted)
 					if ui.NumberInput(c, &a.pingInterval, 0.2, 3600, 0.5).Changed() {
 						a.applyInterval()
@@ -803,7 +748,7 @@ func (a *app) viewPing(c *ui.Context) {
 		}
 	}).Shrink(0)
 
-	card(c, func() {
+	tbl := card(c, func() {
 		display := a.sortedPingSnaps()
 		keys := pingKeys(display)
 		var exportPick tableExportPick
@@ -1005,7 +950,11 @@ func (a *app) viewPing(c *ui.Context) {
 		a.viewImportModal(c)
 		a.viewDupModal(c)
 		a.viewConflictModal(c)
-	}).Grow(1).MinWidth(0).MinHeight(contentMinH)
+	}).Grow(1).MinWidth(0).MinHeight(glassMinH(contentMinH)).Clip()
+	_ = tbl
+	if glassPingChart != nil {
+		glassPingChart(c)
+	}
 }
 
 func (a *app) viewAliasEditModal(c *ui.Context) {
@@ -1111,22 +1060,47 @@ func (a *app) viewPingDetail(c *ui.Context) {
 	s := a.detailSnap
 	meta := a.hostMetaOf(s.Host)
 	loc, region, iso := meta.Loc, meta.Region, meta.ISO
-	title := i18n.T("detail.title")
-	if a.detailIsHop {
-		title = i18n.T("detail.hop_title")
+	// names its subject, as the window/taskbar title and trend window do
+	title := detailWinTitle(s, a.detailIsHop, a.detailHopTTL)
+	var root ui.Element
+	// pane groups the sections; on glass each is a floating pane.
+	pane := func(grow bool, body func()) { body() }
+	dark := t.Dark
+	c.SetTheme(glassTheme(dark))
+	t = c.Theme()
+	glassGround(c, dark)
+	a.detailFit.apply(winOrNil(a.detailWin), detailMinW())
+	root = ui.Column(c).Fill().Padding(8).Gap(8)
+	root.Draw(func(_ *ui.Painter, r ui.Rect) { a.detailFit.have = r.H })
+	pane = func(grow bool, body func()) {
+		el := glassPaneEl(c).Gap(10)
+		if grow {
+			// Grow into spare height but never shrink below the content
+			// (chart + axis labels), so the action bar can't cover it.
+			el.Grow(1).MinHeight(glassDetailChartPaneMinH)
+		}
+		el.Children(body)
 	}
-	ui.Column(c).Fill().Padding(20).Gap(10).Background(t.Background).Children(func() {
-		ui.Text(c, title).FontSize(16).Bold()
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, s.Host).FontSize(13).TextColor(t.TextMuted).Grow(1)
-			if detailShowDisabledBadge(a.detailIsHop, s.Enabled) {
-				ui.Badge(c, i18n.T("badge.disabled")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
-			}
-			if pingIsFailing(s) {
-				ui.Badge(c, i18n.T("badge.abnormal")).Background(t.Danger.Alpha(0.14)).TextColor(t.Danger)
-			}
+
+	root.Children(func() {
+		// The whole title pane moves the window (as the main window's
+		// title bar does); its buttons stay clickable.
+		glassPaneEl(c).Gap(10).DragWindow().Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				ui.Text(c, title).FontSize(16).Bold()
+				ui.Spacer(c)
+				glassWindowButtons(c, winOrNil(a.detailWin))
+			})
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, s.Host).FontSize(13).TextColor(t.TextMuted).Grow(1)
+				if detailShowDisabledBadge(a.detailIsHop, s.Enabled) {
+					ui.Badge(c, i18n.T("badge.disabled")).Background(t.TextMuted.Alpha(0.18)).TextColor(t.TextMuted)
+				}
+				if pingIsFailing(s) {
+					ui.Badge(c, i18n.T("badge.abnormal")).Background(t.Danger.Alpha(0.14)).TextColor(t.Danger)
+				}
+			})
 		})
-		ui.Divider(c)
 		firstLabel, firstVal := i18n.T("detail.alias"), emptyDash(s.Alias)
 		if a.detailIsHop {
 			firstLabel, firstVal = i18n.T("detail.ttl"), fmt.Sprintf("%d", a.detailHopTTL)
@@ -1175,46 +1149,56 @@ func (a *app) viewPingDetail(c *ui.Context) {
 		// Identity rows (long values) take the full width; the statistics
 		// rows go in two columns so the latency chart fits the window.
 		const identityRows = 9
-		for _, r := range rows[:identityRows] {
-			row(r, 100)
-		}
-		ui.Divider(c)
-		statRows := rows[identityRows:]
-		half := (len(statRows) + 1) / 2
-		ui.Row(c).Gap(16).MinWidth(0).Children(func() {
-			for _, part := range [][][2]string{statRows[:half], statRows[half:]} {
-				ui.Column(c).Gap(10).Grow(1).MinWidth(0).Children(func() {
-					for _, r := range part {
-						row(r, 100)
+		pane(false, func() {
+			for _, r := range rows[:identityRows] {
+				row(r, 100)
+			}
+			ui.Divider(c)
+			statRows := rows[identityRows:]
+			half := (len(statRows) + 1) / 2
+			ui.Row(c).Gap(16).MinWidth(0).Children(func() {
+				for _, part := range [][][2]string{statRows[:half], statRows[half:]} {
+					ui.Column(c).Gap(10).Grow(1).MinWidth(0).Children(func() {
+						for _, r := range part {
+							row(r, 100)
+						}
+					})
+				}
+			})
+		})
+		pane(true, func() { a.latencyChartView(c, s.Stats.History) })
+
+		pane(false, func() {
+			ui.Row(c).Gap(10).Justify(ui.End).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				if a.detailExportMsg != "" {
+					ui.Text(c, a.detailExportMsg).FontSize(11).TextColor(t.TextMuted).Grow(1).MinWidth(0).Selectable()
+				}
+				if act := detailExportMenu(c); act.format != "" {
+					if act.copy {
+						a.copyDetail(act.format)
+					} else {
+						a.exportDetail(act.format)
 					}
-				})
-			}
-		})
-		a.latencyChartView(c, s.Stats.History)
-		ui.Spacer(c)
-		ui.Row(c).Gap(10).Justify(ui.End).AlignItems(ui.Center).MinWidth(0).Children(func() {
-			if a.detailExportMsg != "" {
-				ui.Text(c, a.detailExportMsg).FontSize(11).TextColor(t.TextMuted).Grow(1).MinWidth(0).Selectable()
-			}
-			if act := detailExportMenu(c); act.format != "" {
-				if act.copy {
-					a.copyDetail(act.format)
-				} else {
-					a.exportDetail(act.format)
 				}
-			}
-			if ui.Button(c, i18n.T("detail.copy_all")).Clicked() {
-				copyText(formatPingDetail(s, loc, iso, region, meta.ASN, meta.ASNISO, meta.ASNRegion, a.pingRDNSOf(s.Host), a.pingIPOf(s), a.detailIsHop, a.detailHopTTL))
-			}
-			if ui.Button(c, i18n.T("detail.traceroute")).Clicked() {
-				a.jumpToTrace(s.Host)
-			}
-			if ui.PrimaryButton(c, i18n.T("detail.close")).Clicked() {
-				if a.detailWin != nil {
-					a.detailWin.Close()
+				if ui.Button(c, i18n.T("detail.copy_all")).Clicked() {
+					copyText(formatPingDetail(s, loc, iso, region, meta.ASN, meta.ASNISO, meta.ASNRegion, a.pingRDNSOf(s.Host), a.pingIPOf(s), a.detailIsHop, a.detailHopTTL))
 				}
-			}
+				if ui.Button(c, i18n.T("detail.traceroute")).Clicked() {
+					w := a.detailWin
+					a.jumpToTrace(s.Host)
+					if w != nil {
+						w.Close() // the main window shows the trace
+					}
+				}
+				if ui.PrimaryButton(c, i18n.T("detail.close")).Clicked() {
+					if w := a.detailWin; w != nil {
+						w.Close()
+					}
+				}
+			})
 		})
+		// Marks where the pane stack ends (after the root's padding).
+		ui.Box(c).Height(0).Shrink(0).Draw(func(_ *ui.Painter, r ui.Rect) { a.detailFit.need = r.Y + 8 })
 	})
 }
 
@@ -1320,6 +1304,7 @@ func (a *app) viewSettings(c *ui.Context) {
 							a.applyTheme(a.themeName)
 						}
 					}).Description(i18n.T("settings.theme_desc"))
+					a.glassPalettePicker(c)
 				})
 				langDir := filepath.Join(configDirHint(), "lang")
 				ui.Text(c, i18n.Tf("settings.lang_packs", langDir)).FontSize(12).TextColor(t.TextMuted)
@@ -1567,4 +1552,59 @@ func pingColumnsT(tr func(string) string) []ui.TableColumn {
 		{Title: tr("ping.col.last_ok"), ID: "last_ok", Width: 140, Sortable: true},
 		{Title: tr("ping.col.last_fail"), ID: "last_fail", Width: 140, Sortable: true},
 	}
+}
+
+// traceTabCloseSlot is the fixed square reserved for a trace tab's × button.
+func traceTabCloseSlot() float32 { return glassPick(22, 28) }
+
+// traceTabRowH is the fixed height of every trace tab row in every state.
+func traceTabRowH() float32 { return traceTabCloseSlot() + 16 }
+
+// detailMinH is the details windows' minimum height: the glass pane stack
+// (header, info, stats, chart with its axis, action bar, 8px gaps).
+func detailMinH() int {
+	return glassDetailWinMinH
+}
+
+// glassDetailWinMinH fits the glass Ping details with the chart at its
+// smallest (TestGlassDetailFits checks it).
+const glassDetailWinMinH = 880
+
+// paneFit grows a window whose pane stack is taller than the window (large
+// fonts, a long title): need is where the stack ends, have the window's
+// content height, both from the last frame's paint.
+type paneFit struct {
+	need, have float32
+	tries      int
+}
+
+// apply raises the minimum height and the window when the last frame did
+// not fit; it gives up after a few tries (e.g. capped by the screen).
+func (f *paneFit) apply(w glassWin, minW int) {
+	if f.have <= 0 || f.need <= f.have+0.5 || f.tries >= 3 {
+		return
+	}
+	f.tries++
+	ws, ok := w.(interface {
+		Size() (int, int)
+		SetSize(int, int)
+		SetMinimumSize(int, int)
+	})
+	if !ok || ws == nil {
+		return
+	}
+	cw, ch := ws.Size()
+	add := int(f.need-f.have) + 1
+	ws.SetMinimumSize(minW, ch+add)
+	ws.SetSize(cw, ch+add)
+}
+
+// detailMinW: on glass the chart's range selector needs the default width.
+func detailMinW() int {
+	return detailWinW
+}
+
+// trendMinW: on glass the range selector must fit inside the chart pane.
+func trendMinW() int {
+	return 700
 }

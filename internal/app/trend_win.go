@@ -1,7 +1,6 @@
 package app
 
 import (
-	"strconv"
 	"strings"
 	"time"
 
@@ -35,28 +34,30 @@ type trendWindow interface {
 
 // newTrendWindow opens tw's window (replaced in tests).
 var newTrendWindow = func(a *app, tw *trendWin) trendWindow {
-	w := mygo.NewWindow(mygo.WindowOptions{
+	w := mygo.NewWindow(glassWindowOptions(mygo.WindowOptions{
 		Title:     i18n.Tf("chart.trend_title", tw.title),
 		Width:     trendWinW,
 		Height:    trendWinH,
-		MinWidth:  trendWinMinW,
+		MinWidth:  trendMinW(),
 		MinHeight: trendWinMinH,
 		StateKey:  "trend-chart",
 		Content:   ui.View(func(c *ui.Context) { a.viewTrend(c, tw) }),
-	})
+	}))
+	setPopupIcon(w)
+	clampWindowWidth(w, trendMinW())
+	clampWindowHeight(w, trendWinMinH)
+	if last := a.lastTrendWin; last != nil && last != tw {
+		if lw, ok := last.win.(*mygo.Window); ok {
+			cascadeFrom(w, lw)
+		}
+	}
 	w.OnClosed(func() { a.trendClosed(tw) })
 	return w
 }
 
 // popDetailTrend opens the details window's chart in a trend window.
 func (a *app) popDetailTrend() {
-	title := a.detailSnap.Alias
-	if title == "" {
-		title = a.detailSnap.Host
-	}
-	if a.detailIsHop {
-		title = "TTL " + strconv.Itoa(a.detailHopTTL) + " · " + a.detailSnap.Host
-	}
+	title := detailSubject(a.detailSnap, a.detailIsHop, a.detailHopTTL)
 	a.openTrend(a.detailRef(), title, a.detailRange)
 }
 
@@ -88,6 +89,7 @@ func (a *app) openTrend(ref chartRef, title string, rng int) {
 	tw.rf.preset, tw.rf.from, tw.rf.to = f.preset, f.from, f.to
 	a.trendWins[ref.id()] = tw
 	tw.win = newTrendWindow(a, tw)
+	a.lastTrendWin = tw
 	a.kickTrend(tw, true)
 }
 
@@ -96,12 +98,15 @@ func (a *app) trendClosed(tw *trendWin) {
 	if a.trendWins[tw.ref.id()] == tw {
 		delete(a.trendWins, tw.ref.id())
 	}
+	if a.lastTrendWin == tw {
+		a.lastTrendWin = nil
+	}
 }
 
 // closeTrend closes ref's trend window.
 func (a *app) closeTrend(id string) {
 	if tw := a.trendWins[id]; tw != nil {
-		delete(a.trendWins, id)
+		a.trendClosed(tw)
 		tw.win.Close()
 	}
 }
@@ -173,33 +178,60 @@ func (a *app) liveHist(ref chartRef) []float64 {
 
 func (a *app) viewTrend(c *ui.Context, tw *trendWin) {
 	t := c.Theme()
-	ui.Column(c).Fill().Padding(16, 20).Gap(10).MinWidth(0).Background(t.Background).Children(func() {
+	var root ui.Element
+	chartPane := func(body func()) { body() }
+	// gradient ground; title pane with window buttons, chart pane
+	dark := t.Dark
+	c.SetTheme(glassTheme(dark))
+	glassGround(c, dark)
+	root = ui.Column(c).Fill().Padding(8).Gap(8).MinWidth(0)
+	chartPane = func(body func()) { glassPaneEl(c).Gap(10).Grow(1).MinHeight(glassTrendChartPaneMinH).Children(body) }
+
+	root.Children(func() {
 		a.kickTrend(tw, false)
-		ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
-			ui.Text(c, tw.title).FontSize(17).Bold().SingleLine().MinWidth(0)
+		head := func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				ui.Text(c, tw.title).FontSize(17).Bold().SingleLine().MinWidth(0)
+				ui.Spacer(c)
+				gw, _ := tw.win.(glassWin)
+				glassWindowButtons(c, gw)
+			})
+			a.viewRangeBar(c, &tw.rf, tw.ref.filterKind(), 0, nil)
+		}
+		glassPaneEl(c).Gap(10).Shrink(0).DragWindow().Children(head) // the title pane moves the window
+
+		chartPane(func() {
+			f := &tw.feed
+			rng := chartRanges[max(0, min(f.rng, len(chartRanges)-1))]
+			want := feedWant(tw.ref, rng, &tw.rf)
+			var pts []history.Point
+			loading := f.ptsFor != want
+			if !loading {
+				pts = f.pts
+			} else if rng == history.RangeProbe {
+				pts, loading = histPoints(a.liveHist(tw.ref)), false
+			}
+			var from, to time.Time
+			if tw.rf.active() {
+				from, to, _ = tw.rf.bounds(time.Now())
+			}
+			f.view.reset(want)
+			o := chartOpts{view: &f.view, from: from, to: to, more: f.more, height: -1, hint: true}
+			o.minH = glassTrendPlotMinH // shrink the plot, never clip the axis
+
+			if a.rangeChart(c, &f.rng, pts, rng, loading, o) {
+				a.kickTrend(tw, true)
+			}
+			if f.view.WantOlder {
+				a.kickTrend(tw, false)
+			}
 		})
-		a.viewRangeBar(c, &tw.rf, tw.ref.filterKind(), 0, nil)
-		f := &tw.feed
-		rng := chartRanges[max(0, min(f.rng, len(chartRanges)-1))]
-		want := feedWant(tw.ref, rng, &tw.rf)
-		var pts []history.Point
-		loading := f.ptsFor != want
-		if !loading {
-			pts = f.pts
-		} else if rng == history.RangeProbe {
-			pts, loading = histPoints(a.liveHist(tw.ref)), false
-		}
-		var from, to time.Time
-		if tw.rf.active() {
-			from, to, _ = tw.rf.bounds(time.Now())
-		}
-		f.view.reset(want)
-		o := chartOpts{view: &f.view, from: from, to: to, more: f.more, height: -1, hint: true}
-		if a.rangeChart(c, &f.rng, pts, rng, loading, o) {
-			a.kickTrend(tw, true)
-		}
-		if f.view.WantOlder {
-			a.kickTrend(tw, false)
-		}
 	})
 }
+
+// The glass trend window's chart pane: range selector, plot (at least
+// glassTrendPlotMinH), time axis, loss line and key hint.
+const (
+	glassTrendPlotMinH      = float32(140)
+	glassTrendChartPaneMinH = float32(16 + 36 + 6 + 140 + 6 + 18 + 6 + 16 + 16 + 2)
+)

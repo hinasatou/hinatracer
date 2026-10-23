@@ -87,9 +87,10 @@ func RunDesktop() {
 		_ = mygo.Shell.OpenExternal(url)
 	}
 
+	glassPaletteIdx = paletteIndex(a.cfg.Palette)
 	mygo.App.WhenReady(func() {
 		applyThemeSource(a.cfg.Theme)
-		w := mygo.NewWindow(mygo.WindowOptions{
+		w := mygo.NewWindow(glassWindowOptions(mygo.WindowOptions{
 			Title:     "HinaTracer",
 			Width:     mainWinW,
 			Height:    mainWinH,
@@ -97,12 +98,15 @@ func RunDesktop() {
 			MinHeight: 560,
 			StateKey:  "main",
 			Content:   ui.View(a.view),
-		})
+		}))
 		if len(appIconPNG) > 0 {
 			_ = w.SetIcon(appIconPNG)
 		}
 		a.setWindow(w)
 		w.OnClose(func(e *mygo.CloseEvent) {
+			// The detail windows used to be owned by the main window and
+			// went with it; now top-level, close them explicitly.
+			a.closeDetailWindows()
 			if shouldHideOnClose(a.cfg) {
 				e.PreventDefault() // minimize to tray
 				w.Hide()

@@ -229,6 +229,11 @@ func (a *app) latencyChartView(c *ui.Context, hist []float64) {
 	}
 	a.detailView.reset(want)
 	o := chartOpts{view: &a.detailView, from: from, to: to, more: a.detailMore, onPop: a.popDetailTrend}
+	// The glass details window gives the chart the spare height and
+	// shrinks it (down to glassDetailPlotMinH) instead of letting the
+	// action bar cover the time axis.
+	o.height, o.minH = -1, glassDetailPlotMinH
+
 	if a.rangeChart(c, &a.detailRange, pts, rng, loading, o) {
 		a.kickDetailQuery(true)
 	}
@@ -243,7 +248,8 @@ type chartOpts struct {
 	from, to time.Time  // time filter, zero = open
 	more     bool       // older data than the loaded may exist
 	onPop    func()     // shows the open-in-window button
-	height   float32    // of the plot (0 = 150)
+	height   float32    // of the plot (0 = 150, <0 = grow)
+	minH     float32    // smallest plot height when growing (0 = 220)
 	hint     bool       // shows the navigation keys under the chart
 }
 
@@ -286,11 +292,16 @@ func (a *app) rangeChart(c *ui.Context, sel *int, pts []history.Point, rng histo
 		})
 		var hx, hy float32
 		var hov bool
-		el := ui.Column(c).MinWidth(0).Radius(8).Background(t.Surface).Border(1, t.Border).
-			Focusable().FocusRing(false).Label(i18n.T("chart.title")).
+		el := ui.Column(c).MinWidth(0).Radius(8).Focusable()
+
+		el.FocusRing(false).Label(i18n.T("chart.title")).
 			HandleInput(func(ev ui.InputEvent) bool { return chartInput(v, ev) })
 		if h < 0 {
-			el.Grow(1).MinHeight(220)
+			mh := o.minH
+			if mh == 0 {
+				mh = 220
+			}
+			el.Grow(1).MinHeight(mh)
 		} else {
 			el.Height(h)
 		}

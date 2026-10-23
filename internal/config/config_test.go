@@ -113,3 +113,27 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestOldStyleKeyIgnored: configs from 1.3.0 test builds with the removed
+// window style field still load, and the field is not written back.
+func TestOldStyleKeyIgnored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"style":"classic","palette":"ocean"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore(path)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	c := s.Get()
+	if c.Palette != "ocean" {
+		t.Fatalf("palette %q", c.Palette)
+	}
+	if err := s.Set(c); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if contains(string(b), `"style"`) {
+		t.Fatal("style written back")
+	}
+}

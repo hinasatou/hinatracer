@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -72,10 +73,9 @@ type app struct {
 	dataDLStatus string
 
 	// traceroute tabs
-	traceTabs     []*traceTab
-	traceActive   int
-	nextTraceID   int
-	tabStripWidth float32 // left vertical tab list width
+	traceTabs   []*traceTab
+	traceActive int
+	nextTraceID int
 
 	// ping
 	pingMgr       pingEngine
@@ -135,27 +135,15 @@ type app struct {
 	pendingInv   int
 	pendingSkip  int
 
-	// ping/hop detail secondary window
-	detailOpen   bool
-	detailSnap   pinger.Snapshot
-	detailWin    *mygo.Window
-	detailIsHop  bool // true when showing a traceroute hop (not a ping target)
-	detailHopTTL int
-	detailHopTab int // trace tab ID the hop detail came from
+	// ping/hop detail windows: one per subject (target, or trace tab+TTL).
+	// *detailState is the one being drawn or refreshed (UI thread only);
+	// every open window has its own in details.
+	*detailState
+	details []*detailState
 	// detailRedraw asks the details window to rebuild; replaced in tests.
 	detailRedraw func()
-	// latency chart range (index into chartRanges) and its last query
-	detailRange     int
-	detailPts       []history.Point
-	detailPtsFor    string
-	detailQueryAt   time.Time
-	detailQuerying  bool
-	detailWantQ     string
-	detailMore      bool // older chart data may exist
-	detailOlder     bool // loading it
-	detailView      chartView
-	trendWins       map[string]*trendWin
-	detailExportMsg string
+	trendWins    map[string]*trendWin
+	lastTrendWin *trendWin // newest open one, for cascading
 
 	hist     *history.Store
 	http     httpUI
@@ -248,6 +236,7 @@ func newApp() *app {
 	i18n.SetLanguage(cfg.Language)
 
 	a := &app{
+		detailState:  &detailState{},
 		store:        store,
 		cfg:          cfg,
 		nav:          "ping",
@@ -262,6 +251,7 @@ func newApp() *app {
 		dbsLoading:   true,
 		dbStatus:     i18n.T("db.loading"),
 	}
+	a.http.httpDet = &httpDet{}
 	if a.pingInterval <= 0 {
 		a.pingInterval = 1
 	}
@@ -434,17 +424,30 @@ func (a *app) flushUIUpdate() {
 func (a *app) applyFlush(snaps []pinger.Snapshot) {
 	a.pingSnaps = snaps
 	a.refreshTrends()
-	if a.detailWin == nil && a.detailRedraw == nil {
+	a.refreshHTTPDetails()
+	if a.detailRedraw != nil && a.detailState != nil && len(a.details) == 0 {
+		// headless tests drive the current state without a window
+		a.refreshDetailSnap(snaps)
+		a.kickDetailQuery(false)
+		a.redrawDetail()
 		return
 	}
-	if a.refreshDetailSnap(snaps) {
+	cur := a.detailState
+	for _, d := range append([]*detailState(nil), a.details...) {
+		if !a.detailTargetExists(d, snaps) {
+			a.closePingDetail(d) // its target was deleted
+			continue
+		}
+		a.detailState = d
+		a.refreshDetailSnap(snaps)
 		a.kickDetailQuery(false)
 		a.redrawDetail()
 	}
+	a.detailState = cur
 }
 
-// refreshDetailSnap updates detailSnap from the latest ping or hop data and
-// reports whether a details window is showing.
+// refreshDetailSnap updates the current detailSnap from the latest ping or
+// hop data and reports whether a details window is showing.
 func (a *app) refreshDetailSnap(snaps []pinger.Snapshot) bool {
 	if a.detailIsHop {
 		for _, tab := range a.traceTabs {
@@ -473,13 +476,17 @@ func (a *app) refreshDetailSnap(snaps []pinger.Snapshot) bool {
 	return true
 }
 
-func (a *app) redrawDetail() {
+// redrawDetail rebuilds the current details window.
+func (a *app) redrawDetail() { a.redrawDetailOf(a.detailState) }
+
+// redrawDetailOf rebuilds d's window (async callbacks keep their own d).
+func (a *app) redrawDetailOf(d *detailState) {
 	if a.detailRedraw != nil {
 		a.detailRedraw()
 		return
 	}
-	if w := a.detailWin; w != nil {
-		w.Update(func() {})
+	if d != nil && d.detailWin != nil {
+		d.detailWin.Update(func() {})
 	}
 }
 
@@ -918,43 +925,156 @@ func (a *app) applyTheme(name string) {
 }
 
 func (a *app) openPingDetail(s pinger.Snapshot) {
-	a.detailIsHop = false
-	a.detailHopTTL = 0
-	a.openDetailWindow(s)
+	a.openDetailWindow(s, false, 0, 0)
 }
 
-func (a *app) openDetailWindow(s pinger.Snapshot) {
-	a.detailSnap = s
-	if a.detailWin != nil {
-		a.detailWin.Focus()
-		a.detailWin.Update(func() {})
+// sameDetail reports whether d shows the given subject: a ping target (by
+// ID, or host when IDs are unknown) or a trace tab's hop TTL.
+func (d *detailState) sameDetail(s pinger.Snapshot, isHop bool, ttl, tab int) bool {
+	if d.detailIsHop != isHop {
+		return false
+	}
+	if isHop {
+		return d.detailHopTab == tab && d.detailHopTTL == ttl
+	}
+	if s.ID != 0 || d.detailSnap.ID != 0 {
+		return s.ID == d.detailSnap.ID
+	}
+	return s.Host == d.detailSnap.Host
+}
+
+// detailSubject names what a details window shows: alias or host, or
+// "TTL n · address" for a hop (as its trend window does).
+func detailSubject(s pinger.Snapshot, isHop bool, ttl int) string {
+	if isHop {
+		return "TTL " + strconv.Itoa(ttl) + " · " + s.Host
+	}
+	if t := strings.TrimSpace(s.Alias); t != "" {
+		return t
+	}
+	return s.Host
+}
+
+// detailWinTitle is the window/taskbar title of a details window.
+func detailWinTitle(s pinger.Snapshot, isHop bool, ttl int) string {
+	if isHop {
+		return i18n.Tf("detail.hop_win_title_of", detailSubject(s, isHop, ttl))
+	}
+	return i18n.Tf("detail.win_title_of", detailSubject(s, isHop, ttl))
+}
+
+// cascadeFrom places a new popup 24px right/down of the last one of its
+// kind, so they don't stack exactly.
+func cascadeFrom(w, last *mygo.Window) {
+	if w == nil || last == nil {
 		return
 	}
-	title := i18n.T("detail.win_title")
-	if a.detailIsHop {
-		title = i18n.T("detail.hop_win_title")
+	x, y := last.Position()
+	w.SetPosition(x+popupCascade, y+popupCascade)
+}
+
+const popupCascade = 24
+
+// openDetailWindow shows the details of a ping target (isHop false) or a
+// trace hop: the subject's open window comes forward, refreshed; any
+// other subject gets a window of its own. UI thread.
+func (a *app) openDetailWindow(s pinger.Snapshot, isHop bool, ttl, tab int) {
+	for _, d := range a.details {
+		if d.detailOpen && d.sameDetail(s, isHop, ttl, tab) {
+			a.detailState = d
+			d.detailSnap = s
+			if w := d.detailWin; w != nil {
+				w.SetTitle(detailWinTitle(s, isHop, ttl))
+				w.Focus()
+			}
+			a.kickDetailQuery(true)
+			a.redrawDetail()
+			return
+		}
 	}
-	parent := a.win
-	w := mygo.NewWindow(mygo.WindowOptions{
-		Title:     title,
+	var last *mygo.Window
+	if n := len(a.details); n > 0 {
+		last = a.details[n-1].detailWin
+	}
+	d := &detailState{detailSnap: s, detailIsHop: isHop, detailHopTTL: ttl, detailHopTab: tab}
+	if a.detailState != nil {
+		d.detailRange = a.detailState.detailRange // the last chosen granularity
+	}
+	d.detailOpen = true
+	a.detailState = d
+	a.details = append(a.details, d)
+	d.detailWin = newDetailWindow(a, d, last)
+	a.kickDetailQuery(true)
+}
+
+// newDetailWindow opens d's window (replaced in tests).
+var newDetailWindow = func(a *app, d *detailState, last *mygo.Window) *mygo.Window {
+	// A top-level window (no Parent/Modal) like the trend window, so it
+	// gets its own taskbar button and minimizes/restores normally.
+	w := mygo.NewWindow(glassWindowOptions(mygo.WindowOptions{
+		Title:     detailWinTitle(d.detailSnap, d.detailIsHop, d.detailHopTTL),
 		Width:     detailWinW,
 		Height:    detailWinH,
-		MinWidth:  detailWinMinW,
-		MinHeight: detailWinMinH,
-		Parent:    parent,
-		Modal:     true,
+		MinWidth:  detailMinW(),
+		MinHeight: detailMinH(),
 		StateKey:  "ping-detail",
-		Content:   ui.View(a.viewPingDetail),
-	})
-	a.detailWin = w
-	clampWindowHeight(w, detailWinMinH)
-	a.detailPts, a.detailPtsFor, a.detailExportMsg = nil, "", ""
-	a.kickDetailQuery(true)
-	w.OnClosed(func() {
-		a.detailWin = nil
-		a.detailIsHop = false
-		a.detailHopTTL = 0
-	})
+		Content: ui.View(func(c *ui.Context) {
+			a.detailState = d
+			a.viewPingDetail(c)
+		}),
+	}))
+	setPopupIcon(w)
+	clampWindowHeight(w, detailMinH())
+	clampWindowWidth(w, detailMinW())
+	cascadeFrom(w, last)
+	w.OnClosed(func() { a.detailClosed(d) })
+	return w
+}
+
+// detailClosed forgets a details window the user (or the app) closed.
+func (a *app) detailClosed(d *detailState) {
+	d.detailWin, d.detailOpen = nil, false
+	for i, x := range a.details {
+		if x == d {
+			a.details = append(a.details[:i:i], a.details[i+1:]...)
+			break
+		}
+	}
+}
+
+// detailTargetExists reports whether d's ping target (or hop's trace tab)
+// is still there.
+func (a *app) detailTargetExists(d *detailState, snaps []pinger.Snapshot) bool {
+	if d.detailIsHop {
+		for _, t := range a.traceTabs {
+			if t.ID == d.detailHopTab {
+				return true
+			}
+		}
+		return a.remote != nil // remote tabs come from the server's state
+	}
+	for _, s := range snaps {
+		if s.ID == d.detailSnap.ID {
+			return true
+		}
+	}
+	return false
+}
+
+// closePingDetail closes one details window.
+func (a *app) closePingDetail(d *detailState) {
+	w := d.detailWin
+	a.detailClosed(d)
+	if w != nil {
+		w.Close()
+	}
+}
+
+// closePingDetails closes every Ping/hop details window.
+func (a *app) closePingDetails() {
+	for _, d := range append([]*detailState(nil), a.details...) {
+		a.closePingDetail(d)
+	}
 }
 
 func configDirHint() string {
@@ -1466,4 +1586,37 @@ func (a *app) reloadDBsAsync(name string) {
 		a.refreshAllHostMeta()
 		a.requestUIUpdate()
 	})
+}
+
+// clampWindowWidth raises a saved window width below the minimum.
+func clampWindowWidth(w *mygo.Window, minW int) {
+	if w == nil {
+		return
+	}
+	if cw, ch := w.Size(); cw > 0 && cw < minW {
+		w.SetSize(minW, ch)
+	}
+}
+
+// detailState is one Ping/hop detail window: its subject, chart feed and
+// view. Each window keeps its own and updates on its own.
+type detailState struct {
+	detailOpen   bool
+	detailSnap   pinger.Snapshot
+	detailWin    *mygo.Window
+	detailFit    paneFit // glass details: content vs window height
+	detailIsHop  bool    // true when showing a traceroute hop (not a ping target)
+	detailHopTTL int
+	detailHopTab int // trace tab ID the hop detail came from
+	// latency chart range (index into chartRanges) and its last query
+	detailRange     int
+	detailPts       []history.Point
+	detailPtsFor    string
+	detailQueryAt   time.Time
+	detailQuerying  bool
+	detailWantQ     string
+	detailMore      bool // older chart data may exist
+	detailOlder     bool // loading it
+	detailView      chartView
+	detailExportMsg string
 }

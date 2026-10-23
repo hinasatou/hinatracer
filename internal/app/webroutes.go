@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"hinatracer/i18n"
+	"hinatracer/internal/config"
 	"hinatracer/internal/pinger"
 )
 
@@ -409,6 +410,13 @@ func (a *app) webRoutes(mux *http.ServeMux) {
 			applyThemeSource(r.Theme)
 		}
 		a.persist()
+		return apiResult{OK: true}
+	}))
+	mux.Handle("POST /api/settings/palette", mutate(a, func(r struct{ Palette string }) apiResult {
+		if config.NormalizePalette(r.Palette) != r.Palette {
+			return apiResult{Message: "bad palette"}
+		}
+		a.setPalette(r.Palette)
 		return apiResult{OK: true}
 	}))
 	mux.Handle("POST /api/settings/data", mutate(a, func(r struct{ IPDB, GeoIP, ASN string }) apiResult {

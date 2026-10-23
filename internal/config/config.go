@@ -68,6 +68,9 @@ type Config struct {
 	AutoStartPing bool         `json:"autoStartPing"`
 	Language      string       `json:"language,omitempty"` // e.g. zh-CN, en
 	Theme         string       `json:"theme,omitempty"`    // system | light | dark
+	// Palette is the color theme (sakura, mint, ocean, sunset, graphite,
+	// matcha); also the WebUI default for browsers without their own pick.
+	Palette string `json:"palette,omitempty"`
 
 	TraceTabs      []TraceTab `json:"traceTabs,omitempty"`
 	TraceActiveTab int        `json:"traceActiveTab,omitempty"`
@@ -265,6 +268,7 @@ func migrate(c Config) Config {
 	default:
 		c.Theme = "system"
 	}
+	c.Palette = NormalizePalette(c.Palette)
 	return c
 }
 
@@ -334,4 +338,18 @@ func ResolvePath() string {
 // ConfigDir returns the directory containing the config file.
 func ConfigDir() string {
 	return filepath.Dir(ResolvePath())
+}
+
+// Palettes lists the color theme IDs; the first is the default.
+var Palettes = []string{"sakura", "mint", "ocean", "sunset", "graphite", "matcha"}
+
+// NormalizePalette returns p if it is a known palette ID, else the default.
+func NormalizePalette(p string) string {
+	p = strings.ToLower(strings.TrimSpace(p))
+	for _, id := range Palettes {
+		if id == p {
+			return p
+		}
+	}
+	return Palettes[0]
 }

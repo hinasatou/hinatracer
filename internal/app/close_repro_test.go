@@ -49,7 +49,7 @@ func TestCloseTraceTabUI(t *testing.T) {
 				}
 				tt.ClickAt(r.X+r.W+16, r.Y+r.H/2)
 			} else {
-				if err := tt.Click("×"); err != nil {
+				if err := tt.Click(i18n.T("trace.tab.ctx.close")); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -25,6 +25,28 @@
   };
   const W = el => { el.classList.add('w'); return el; };
 
+  // ---------- color theme ----------
+  // Like the language: a default in the config (admin only, S.settings.palette
+  // and S.settings.theme) and this browser's own pick in localStorage
+  // (ht.palette, ht.mode; empty = follow the default). Guests may pick too.
+  const PALETTES = ['sakura', 'mint', 'ocean', 'sunset', 'graphite', 'matcha'];
+  const okPalette = id => PALETTES.includes(id) ? id : '';
+  const myPalette = () => okPalette(localStorage.getItem('ht.palette') || '');
+  const myMode = () => { const m = localStorage.getItem('ht.mode') || ''; return ['light', 'dark', 'system'].includes(m) ? m : ''; };
+  const defPalette = () => okPalette((S && S.settings.palette) || '') || PALETTES[0];
+  const defMode = () => (S && S.settings.theme) || 'system';
+  function applyLook() {
+    const root = document.documentElement;
+    root.dataset.palette = myPalette() || defPalette();
+    const m = myMode() || defMode();
+    if (m === 'light' || m === 'dark') root.dataset.theme = m; else delete root.dataset.theme;
+  }
+  { // before the first state (S not yet declared): this browser's pick only
+    const root = document.documentElement, m = myMode();
+    root.dataset.palette = myPalette() || PALETTES[0];
+    if (m === 'light' || m === 'dark') root.dataset.theme = m;
+  }
+
   // ---------- i18n ----------
   let STR = {}, LANGS = [], LANG = '', DEFAULT_LANG = '';
   function T(key, ...args) {
@@ -802,8 +824,8 @@
   function openTrendView(ref, title, range, rowOf) {
     closeTrendView();
     const chart = chartWidget(ref, { range, big: true, hint: true });
-    const close = H('button', { class: 'btn sm', type: 'button', onclick: closeTrendView, 'aria-label': T('detail.close') }, '✕');
-    const box = H('div', { class: 'chart-full-box' }, H('div', { class: 'chart-full-head' }, H('h2', { text: T('chart.trend_title', title) }), close), chart.el);
+    const close = H('button', { class: 'win-x', type: 'button', onclick: closeTrendView, title: T('detail.close'), 'aria-label': T('detail.close') }, '✕');
+    const box = H('div', { class: 'chart-full-box glass-pop' }, H('div', { class: 'gpane gpane-title' }, H('div', { class: 'chart-full-head' }, H('h2', { text: T('chart.trend_title', title) }), close)), H('div', { class: 'gpane grow' }, chart.el));
     const bg = H('div', { class: 'chart-full' }, box);
     document.body.append(bg);
     trendView = { bg, update: st => { const r = rowOf(st); if (!r) { closeTrendView(); return; } chart.refresh(r); } };
@@ -1095,8 +1117,13 @@
 
   function buildNav() {
     const nav = $('#nav'); nav.replaceChildren();
+    const foot = $('#footIcons'); if (foot) foot.replaceChildren();
     NAV.forEach(([id, key, d]) => {
       const svg = `<svg viewBox="0 0 24 24"><path d="${d}"/></svg>`;
+      if (foot && (id === 'settings' || id === 'about')) { // bottom-left icon buttons
+        const b = H('button', { type: 'button', class: 'foot-icon' + (id === page ? ' on' : ''), title: T(key), 'aria-label': T(key), onclick: () => go(id) });
+        b.innerHTML = svg; foot.append(b); return;
+      }
       const a = H('a', { class: id === page ? 'on' : '', onclick: () => go(id) });
       a.innerHTML = svg; a.append(T(key));
       nav.append(a);
@@ -1121,7 +1148,7 @@
   function update() {
     if (!S) return;
     const root = document.documentElement;
-    if (S.settings.theme === 'light' || S.settings.theme === 'dark') root.dataset.theme = S.settings.theme; else delete root.dataset.theme;
+    applyLook(); void root;
     $('#ver').textContent = 'v' + S.version;
     const b = $('#topBadges'); b.replaceChildren();
     if (GUEST) b.append(H('span', { class: 'badge guest', title: T('web.guest.tip') }, T('web.badge.guest')));
@@ -1166,7 +1193,10 @@
         if (r) openTrendView(ref, ref.kind === 'hop' ? 'TTL ' + r.ttl + ' · ' + r.addr : (r.alias || r.host), rng, rowOf);
       } });
       chartBox.append(chart.el);
-      box.append(title, stats, chartBox, kv, actions);
+      box.classList.add('glass-pop');
+      const xBtn = H('button', { class: 'win-x', type: 'button', title: T('detail.close'), 'aria-label': T('detail.close'), onclick: closeModal }, '✕');
+      const pane = (...k) => H('div', { class: 'gpane' }, ...k);
+      box.append(pane(H('div', { class: 'gpane-head' }, title, H('span', { class: 'sp' }), xBtn), stats), pane(chartBox), pane(kv), pane(actions));
       let text = '', host = '', lastSig = '';
       actions.append(
         histExportButton(ref, () => chart.range()),
@@ -1802,6 +1832,56 @@
     // 「我的语言」 (this browser, localStorage) and 「默认语言」 (config,
     // admin only). Effective language: the browser's own, else the default.
     let defLang = null;
+    // color theme chips; value '' = follow the default (shown in its colors)
+    function swatches(label, get, set, follow) {
+      const chips = H('div', { class: 'palette', role: 'radiogroup', 'aria-label': label });
+      const ids = follow ? [''].concat(PALETTES) : PALETTES;
+      const name = id => T('settings.palette.' + id);
+      const btns = ids.map(v => {
+        const b = H('button', { type: 'button', class: 'swatch', role: 'radio', 'data-v': v, 'data-p': v || defPalette() }, H('i', null, H('b')), H('span'));
+        b.addEventListener('click', async () => { await set(v); paint(); });
+        chips.append(b); return b;
+      });
+      function paint() {
+        const cur = get();
+        btns.forEach(b => {
+          const v = b.dataset.v, on = v === cur;
+          if (!v) b.dataset.p = defPalette();
+          const txt = v ? name(v) : T('settings.palette_follow', name(defPalette()));
+          b.querySelector('span').textContent = txt; b.title = txt;
+          b.classList.toggle('on', on); b.setAttribute('aria-checked', on);
+        });
+      }
+      paint();
+      return { el: chips, paint };
+    }
+    let myPal = null, defPal = null, myModeSel = null;
+    function lookFields() {
+      myPal = swatches(T('settings.palette_mine'), myPalette, v => {
+        if (v) localStorage.setItem('ht.palette', v); else localStorage.removeItem('ht.palette');
+        applyLook();
+      }, true);
+      myModeSel = H('select');
+      const fillMode = () => {
+        myModeSel.replaceChildren(H('option', { value: '', text: T('settings.theme_follow', T('settings.theme.' + defMode())) }),
+          ...['light', 'dark', 'system'].map(v => H('option', { value: v, text: T('settings.theme.' + v) })));
+        myModeSel.value = myMode();
+      };
+      fillMode(); myModeSel.fill = fillMode;
+      myModeSel.onchange = () => {
+        if (myModeSel.value) localStorage.setItem('ht.mode', myModeSel.value); else localStorage.removeItem('ht.mode');
+        applyLook();
+      };
+      return [H('label', { text: T('settings.palette_mine') }), H('div', { class: 'field' }, myPal.el, H('div', { class: 'hint', text: T('settings.palette_mine_desc') })),
+        H('label', { text: T('settings.theme_mine') }), H('div', { class: 'field' }, myModeSel, H('div', { class: 'hint', text: T('settings.palette_mine_desc') }))];
+    }
+    function defaultPaletteField() {
+      defPal = swatches(T('settings.palette_default'), defPalette, async v => {
+        const r = await api('settings/palette', { palette: v });
+        if (r && r.ok && S) { S.settings.palette = v; applyLook(); if (myPal) myPal.paint(); }
+      }, false);
+      return [H('label', { text: T('settings.palette_default') }), H('div', { class: 'field' }, defPal.el, H('div', { class: 'hint', text: T('settings.palette_default_desc') }))];
+    }
     function langCard() {
       const langName = c => (LANGS.find(l => l.code === c) || { name: c || '' }).name;
       const mine = H('select');
@@ -1828,6 +1908,7 @@
         kids.push(H('label', { text: T('settings.language_default') }),
           H('div', { class: 'field' }, defLang, H('div', { class: 'hint', text: T('settings.language_default_desc') })));
       }
+      kids.push(...lookFields());
       return H('section', { class: 'card' }, H('h3', { text: T('settings.appearance') }), H('div', { class: 'form' }, ...kids));
     }
     if (GUEST) {
@@ -1839,7 +1920,7 @@
     theme.onchange = () => api('settings/theme', { theme: theme.value });
     const appear = langCard();
     appear.querySelector('.form').append(
-      H('label', { text: T('settings.theme') }), H('div', { class: 'field' }, theme, H('div', { class: 'hint', text: T('web.theme_desc') })));
+      H('label', { text: T('settings.theme') }), H('div', { class: 'field' }, theme, H('div', { class: 'hint', text: T('web.theme_desc') })), ...defaultPaletteField());
     root.append(appear);
 
     const ipdb = H('input', { type: 'text', class: 'w-full', placeholder: T('settings.ipdb_ph') });
@@ -1954,6 +2035,7 @@
       update(st) {
         const s = st.settings;
         sync(theme, s.theme, 'theme');
+        if (lastSig.look !== s.theme + '/' + s.palette) { lastSig.look = s.theme + '/' + s.palette; if (myPal) myPal.paint(); if (defPal) defPal.paint(); if (myModeSel) myModeSel.fill(); }
         if (defLang && st.lang) sync(defLang, st.lang, 'deflang');
         sync(guestBox, !!st.web.guest, 'guest');
         guestBox.disabled = !st.web.hasPassword;

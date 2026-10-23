@@ -130,7 +130,8 @@ func (a *app) kickDetailQuery(force bool) {
 	if a.detailRange < 0 || a.detailRange >= len(chartRanges) {
 		return
 	}
-	a.kickFeed(a.detailFeedPtrs(), a.detailRef(), a.detailFilter(), force, a.redrawDetail)
+	d := a.detailState
+	a.kickFeed(a.detailFeedPtrs(), a.detailRef(), a.detailFilter(), force, func() { a.redrawDetailOf(d) })
 }
 
 // kickDetailOlder loads what precedes the loaded points (the view asked).
@@ -203,6 +204,7 @@ func downloadsDir() string {
 // exportDetail saves the detail chart's data as CSV or TXT (UI thread:
 // collects what it needs, then works in the background).
 func (a *app) exportDetail(format string) {
+	d := a.detailState
 	r := chartRanges[max(0, min(a.detailRange, len(chartRanges)-1))]
 	key, target, alias := a.detailKey(), a.detailSnap.Host, a.detailSnap.Alias
 	ip := a.pingIPOf(a.detailSnap)
@@ -214,8 +216,8 @@ func (a *app) exportDetail(format string) {
 		msg := saveExportFile(historyFileName(target, r, format), data)
 		_ = a.run(func() {
 			a.taskbarEnd(tb)
-			a.detailExportMsg = msg
-			a.redrawDetail()
+			d.detailExportMsg = msg
+			a.redrawDetailOf(d)
 		})
 	})
 }
@@ -226,6 +228,7 @@ func (a *app) copyDetailTXT() { a.copyDetail("txt") }
 // copyDetail copies the same text as the TXT or Markdown export to the
 // clipboard.
 func (a *app) copyDetail(format string) {
+	d := a.detailState
 	r := chartRanges[max(0, min(a.detailRange, len(chartRanges)-1))]
 	key, target, alias := a.detailKey(), a.detailSnap.Host, a.detailSnap.Alias
 	ip := a.pingIPOf(a.detailSnap)
@@ -233,7 +236,7 @@ func (a *app) copyDetail(format string) {
 	src := a.historySource()
 	a.copyFetched(func() ([]byte, error) {
 		return historyExportFrom(src, key, target, alias, ip, r, format), nil
-	}, func(msg string) { a.detailExportMsg = msg; a.redrawDetail() })
+	}, func(msg string) { d.detailExportMsg = msg; a.redrawDetailOf(d) })
 }
 
 // exportDetailCSV is exportDetail("csv").

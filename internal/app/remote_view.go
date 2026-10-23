@@ -55,6 +55,7 @@ func (a *app) enterRemote(rc *remoteClient) {
 		a.lookupMu.Unlock()
 	}
 	a.closeTrends() // their targets belong to the other side
+	a.closeDetailWindows()
 	a.remote = rc
 	a.resetRemoteMirror()
 	a.pingMgr = newRemotePing(rc)
@@ -90,10 +91,7 @@ func (a *app) leaveRemote() {
 		a.pingRDNS = map[string]string{}
 		a.pingRDNSMu.Unlock()
 	}
-	if a.detailWin != nil {
-		a.detailWin.Close()
-		a.detailWin = nil
-	}
+	a.closeDetailWindows()
 	a.closeTrends()
 	a.cfg.RemoteMode = false
 	a.persist()

@@ -18,7 +18,7 @@ func (a *app) viewWebUI(c *ui.Context) {
 	st := a.web.srv.Status()
 	hasPW := a.cfg.WebPasswordHash != "" || webEnvPasswordHash() != ""
 	ui.Scroll(c).Grow(1).Fill().MinWidth(0).MinHeight(0).Children(func() {
-		ui.Column(c).Gap(14).MinWidth(0).Padding(0, 0, 8, 0).Children(func() {
+		ui.Column(c).Gap(glassPick(14, 8)).MinWidth(0).Padding(0, 0, 8, 0).Children(func() {
 			card(c, func() {
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, i18n.T("web.status.title")).FontSize(14).Bold()

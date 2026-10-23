@@ -350,7 +350,7 @@ func (a *app) viewIPLookup(c *ui.Context) {
 	pendingQuery := false
 	pendingClear := false
 
-	ui.Column(c).Gap(14).Padding(0, 4).MinWidth(0).FillHeight().Children(func() {
+	ui.Column(c).Gap(glassPick(14, 8)).MinWidth(0).FillHeight().Children(func() {
 		card(c, func() {
 			ui.Text(c, i18n.T("lookup.title")).FontSize(13).Bold()
 			ui.Text(c, i18n.T("lookup.desc")).FontSize(12).TextColor(t.TextMuted)
