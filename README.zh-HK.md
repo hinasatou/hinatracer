@@ -226,6 +226,8 @@ WebUI 執行時，HinaTracer 同時是一個 MCP 伺服器（Streamable HTTP）�
 | `Country.mmdb` | 地區與旗幟 | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
 | `ip2asn-combined.tsv.gz` | ASN、網絡名稱、ASN 地區 | [iptoasn.com](https://iptoasn.com/) |
 
+`qqwry.ipdb` 的位置文字是中文。介面語言不是中文時，會透過 Google 翻譯免費服務翻譯（**設定 > 位置翻譯**，預設開啟，可在那裏關閉）。只傳送地名文字，不會傳送 IP。會使用系統代理（Windows 為 Internet 選項中的代理；不支援 PAC 指令碼，可改設 `HTTPS_PROXY`）。地區名稱跟隨介面語言顯示。
+
 這些檔案遵循各自的授權條款。
 
 ## 設定、檔案與語言

@@ -128,6 +128,11 @@ type Config struct {
 	// stored token (default off: the app starts local).
 	RemoteAutoConnect bool `json:"remoteAutoConnect,omitempty"`
 
+	// TranslateLoc translates the Chinese IPDB location text into the UI
+	// language (any non-Chinese UI) via Google Translate's free endpoint.
+	// nil (missing) = on; an explicit false stays off.
+	TranslateLoc *bool `json:"translateLoc,omitempty"`
+
 	// Deprecated: migrated into IPDBPath.
 	QQWryPath string `json:"qqwryPath,omitempty"`
 }
@@ -146,6 +151,9 @@ func (t HTTPTarget) IsEnabled() bool { return t.Enabled == nil || *t.Enabled }
 func (c Config) CheckUpdatesOnStart() bool {
 	return c.UpdateCheckOnStart == nil || *c.UpdateCheckOnStart
 }
+
+// TranslateLocOn reports the location translation switch (default true).
+func (c Config) TranslateLocOn() bool { return c.TranslateLoc == nil || *c.TranslateLoc }
 
 // IncludePrereleases reports the "include pre-releases" channel.
 func (c Config) IncludePrereleases() bool { return c.UpdateChannel == "prerelease" }

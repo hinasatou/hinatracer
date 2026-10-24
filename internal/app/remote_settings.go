@@ -19,6 +19,7 @@ type remoteServerUI struct {
 	ipdb, geoip, asn         string
 	startPing, startTrace    bool
 	startHTTP                bool
+	translateLoc             bool
 	channel                  string
 	checkOnRun               bool
 	histSave                 bool
@@ -44,6 +45,7 @@ func (a *app) syncRemoteServerDraft(st wsState) {
 		s.channel = i18n.T("update.channel.prerelease")
 	}
 	s.checkOnRun = st.Settings.UpdateCheckOnStart
+	s.translateLoc = st.Settings.TranslateLoc
 	s.histSave, s.histDays = st.Settings.HistorySave, strconv.Itoa(st.Settings.HistoryDays)
 	s.webHost, s.webAuto, s.guest = st.Web.Host, st.Web.AutoStart, st.Web.Guest
 	s.webPort, s.webListen, s.webSaved = "", st.Web.Listen, ""
@@ -221,6 +223,13 @@ func (a *app) viewRemoteServerSettings(c *ui.Context) {
 		if ch1 || ch2 || ch3 {
 			a.remoteSet("/api/settings/startup", map[string]bool{"autoStartPing": s.startPing, "autoStartHttp": s.startHTTP, "autoStartTrace": s.startTrace})
 		}
+	})
+	card(c, func() {
+		cardTitle(c, i18n.T("settings.loctr.title"))
+		if ui.Checkbox(c, &s.translateLoc, i18n.T("settings.loctr.enable")).Disabled(ro).Changed() {
+			a.remoteSet("/api/settings/loctr", map[string]bool{"enabled": s.translateLoc})
+		}
+		ui.Text(c, i18n.T("settings.loctr.desc")).FontSize(12).TextColor(c.Theme().TextMuted).Wrap()
 	})
 	card(c, func() {
 		cardTitle(c, i18n.T("settings.history.title"))

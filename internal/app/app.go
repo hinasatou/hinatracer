@@ -25,6 +25,7 @@ import (
 	"hinatracer/internal/flagx"
 	"hinatracer/internal/geoip"
 	"hinatracer/internal/ipdb"
+	"hinatracer/internal/loctr"
 	"hinatracer/internal/pinger"
 )
 
@@ -33,8 +34,9 @@ type app struct {
 	alerts               alertWatch // desktop alerts (notifications, tray)
 	settingsInactiveOpen bool       // remote mode: local-only settings group expanded
 	win                  *mygo.Window
-	tbProg               taskbarProgress // taskbar / Dock progress of long tasks
-	dlTB, updTB          int             // taskbar tokens: data download, updater
+	locTr                *loctr.Translator // optional IPDB location translation
+	tbProg               taskbarProgress   // taskbar / Dock progress of long tasks
+	dlTB, updTB          int               // taskbar tokens: data download, updater
 
 	store *config.Store
 	cfg   config.Config
@@ -276,6 +278,7 @@ func newApp() *app {
 	}
 	a.pingSnaps = a.pingMgr.Snapshots()
 	a.initHistory()
+	a.initLocTr()
 	a.initHTTP()
 	a.initWebAuth()
 	// Heavy work (DB load, DNS/geo/ASN, auto-start) starts after the window is shown.
@@ -609,6 +612,9 @@ func (a *app) lookupLocForIP(ip string) (loc, region, iso string) {
 	if ipDB != nil {
 		rec, err := ipDB.Lookup(ip)
 		loc = ipdb.Format(rec, err)
+		if err == nil {
+			loc = a.trLoc(loc)
+		}
 		iso = strings.ToUpper(strings.TrimSpace(rec.ISO))
 	}
 	if geoDB != nil {
@@ -616,9 +622,12 @@ func (a *app) lookupLocForIP(ip string) (loc, region, iso string) {
 		if gISO != "" {
 			iso = gISO
 		}
+		if ln := geoip.LocalName(iso, i18n.Language()); ln != "" && err == nil {
+			name = ln
+		}
 		region = flagx.NameOnly(iso, geoip.Format(name, gISO, err))
 	} else if iso != "" {
-		region = flagx.NameOnly(iso, iso)
+		region = flagx.NameOnly(iso, geoip.Format(geoip.LocalName(iso, i18n.Language()), iso, nil))
 	}
 	return loc, region, iso
 }
@@ -643,7 +652,7 @@ func (a *app) lookupASNForIP(ip string) (asnText, asnRegion, asnISO string) {
 	}
 	asnISO = strings.ToUpper(strings.TrimSpace(rec.ISO))
 	if asnISO != "" {
-		asnRegion = flagx.NameOnly(asnISO, asnISO)
+		asnRegion = flagx.NameOnly(asnISO, geoip.Label(asnISO, i18n.Language()))
 	}
 	return asnText, asnRegion, asnISO
 }
@@ -1427,6 +1436,9 @@ func (a *app) hostMetaOf(host string) hostMeta {
 	m, ok := a.hostMeta[key]
 	a.hostMetaMu.Unlock()
 	if ok {
+		if m.Ready {
+			m.Loc = a.trLoc(m.Loc) // in-memory cache only; never blocks
+		}
 		return m
 	}
 	// Kick off async fill; return placeholder for this frame.

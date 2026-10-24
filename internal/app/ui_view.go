@@ -1382,6 +1382,7 @@ func (a *app) viewLocalOnlySettings(c *ui.Context) {
 
 	if a.remote == nil {
 		a.viewSettingsUpdate(c)
+		a.viewSettingsLocTr(c)
 	}
 	a.viewSettingsHistory(c)
 

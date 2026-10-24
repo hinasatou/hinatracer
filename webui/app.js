@@ -1968,6 +1968,11 @@
       H('label', { class: 'row' }, onRun, T('update.settings.on_start')),
       H('div', { class: 'row' }, H('span', { text: T('update.settings.channel') }), chan), skipRow));
 
+    const locTr = H('input', { type: 'checkbox' });
+    locTr.onchange = () => api('settings/loctr', { enabled: locTr.checked });
+    root.append(H('section', { class: 'card' }, H('h3', { text: T('settings.loctr.title') }),
+      H('label', { class: 'row' }, locTr, T('settings.loctr.enable')), H('div', { class: 'hint', text: T('settings.loctr.desc') })));
+
     const webInfo = H('div', { class: 'kv' });
     root.append(H('section', { class: 'card' }, H('h3', { text: T('web.settings.title') }), H('div', { class: 'desc', text: T('web.settings.desc') }), webInfo));
 
@@ -2048,7 +2053,7 @@
         sync(histSave, !!s.historySave, 'histSave');
         if (document.activeElement !== histDays && histDays._v !== s.historyDays) { histDays.value = s.historyDays; histDays._v = s.historyDays; }
         if (histPath._v !== s.historyPath) { histPath.textContent = T('settings.history.desc', s.historyPath || ''); histPath._v = s.historyPath; }
-        sync(onRun, s.updateCheckOnStart, 'onRun'); sync(chan, s.updateChannel, 'chan');
+        sync(onRun, s.updateCheckOnStart, 'onRun'); sync(locTr, !!s.translateLoc, 'locTr'); sync(chan, s.updateChannel, 'chan');
         if (skipRow._v !== s.updateSkip) {
           skipRow._v = s.updateSkip;
           skipRow.replaceChildren(...(s.updateSkip ? [H('span', { class: 'status', text: T('update.settings.skipped', s.updateSkip) }),

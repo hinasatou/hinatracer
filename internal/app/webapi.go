@@ -106,6 +106,7 @@ func (a *app) webBuildState() wsState {
 	}
 	st.UpdateCheckOnStart = a.cfg.CheckUpdatesOnStart()
 	st.UpdateSkip = a.cfg.UpdateSkipVersion
+	st.TranslateLoc = a.cfg.TranslateLocOn()
 	st.ConfigPath = a.store.Path()
 	st.ConfigDir = configDirHint()
 	st.DBLoading, st.DBStatus = a.getDBStatus()

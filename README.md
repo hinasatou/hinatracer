@@ -226,6 +226,8 @@ Location, region and ASN come from three free files. **Settings → Download / u
 | `Country.mmdb` | Region and flag | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
 | `ip2asn-combined.tsv.gz` | ASN, network name, ASN region | [iptoasn.com](https://iptoasn.com/) |
 
+`qqwry.ipdb` location text is in Chinese. When the interface language is not Chinese, HinaTracer translates it through Google Translate's free service (**Settings > Location translation**, on by default; turn it off there). Only the place-name text is sent, never IP addresses. The system proxy is used (on Windows, the Internet Options proxy; PAC scripts are not supported — set `HTTPS_PROXY` instead). Region names follow the interface language.
+
 These files are subject to their own licenses.
 
 ## Settings, files and languages

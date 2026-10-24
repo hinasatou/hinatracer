@@ -137,3 +137,13 @@ func TestOldStyleKeyIgnored(t *testing.T) {
 		t.Fatal("style written back")
 	}
 }
+
+func TestTranslateLocDefaultOn(t *testing.T) {
+	var c Config
+	if !c.TranslateLocOn() {
+		t.Fatal("missing key must mean on")
+	}
+	if err := json.Unmarshal([]byte(`{"translateLoc":false}`), &c); err != nil || c.TranslateLocOn() {
+		t.Fatal("explicit false must stay off")
+	}
+}

@@ -226,6 +226,8 @@ WebUI の実行中、HinaTracer は `http://HOST:PORT/mcp` の MCP サーバー�
 | `Country.mmdb` | 地域と旗 | [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip) |
 | `ip2asn-combined.tsv.gz` | ASN、ネットワーク名、ASN の地域 | [iptoasn.com](https://iptoasn.com/) |
 
+`qqwry.ipdb` の位置テキストは中国語です。表示言語が中国語以外のときは Google 翻訳の無料サービスで翻訳します（**設定 > 位置情報の翻訳**、既定はオン。ここでオフにできます）。送信されるのは地名テキストのみで、IP は送信しません。システムのプロキシを使用します（Windows ではインターネット オプションのプロキシ。PAC スクリプトには非対応のため、その場合は `HTTPS_PROXY` を設定してください）。地域名は表示言語で表示されます。
+
 これらのファイルにはそれぞれのライセンスが適用されます。
 
 ## 設定・ファイル・言語

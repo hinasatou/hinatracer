@@ -151,6 +151,7 @@ type State struct {
 		UpdateChannel      string `json:"updateChannel"`
 		UpdateCheckOnStart bool   `json:"updateCheckOnStart"`
 		UpdateSkip         string `json:"updateSkip"`
+		TranslateLoc       bool   `json:"translateLoc"`
 		ConfigPath         string `json:"configPath"`
 		ConfigDir          string `json:"configDir"`
 		DBLoading          bool   `json:"dbLoading"`

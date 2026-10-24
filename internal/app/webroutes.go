@@ -419,6 +419,10 @@ func (a *app) webRoutes(mux *http.ServeMux) {
 		a.setPalette(r.Palette)
 		return apiResult{OK: true}
 	}))
+	mux.Handle("POST /api/settings/loctr", mutate(a, func(r struct{ Enabled bool }) apiResult {
+		a.setTranslateLoc(r.Enabled)
+		return apiResult{OK: true}
+	}))
 	mux.Handle("POST /api/settings/data", mutate(a, func(r struct{ IPDB, GeoIP, ASN string }) apiResult {
 		// Paths are only opened for reading (same as typing them in the GUI).
 		a.draftIPDB, a.draftGeoIP, a.draftASN = strings.TrimSpace(r.IPDB), strings.TrimSpace(r.GeoIP), strings.TrimSpace(r.ASN)
