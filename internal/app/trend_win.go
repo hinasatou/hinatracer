@@ -190,7 +190,7 @@ func (a *app) viewTrend(c *ui.Context, tw *trendWin) {
 	root.Children(func() {
 		a.kickTrend(tw, false)
 		head := func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+			ui.Row(c).Padding(0, 0, 0, glassLightsPad(c)).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
 				ui.Text(c, tw.title).FontSize(17).Bold().SingleLine().MinWidth(0)
 				ui.Spacer(c)
 				gw, _ := tw.win.(glassWin)

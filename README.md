@@ -97,6 +97,8 @@ Get the latest version from **[GitHub Releases](https://github.com/hinasatou/hin
 
 **macOS install.** Open the `.dmg` and drag **HinaTracer** onto **Applications**.
 
+**macOS window style.** On macOS the window has no title bar: the native close / minimize / zoom buttons sit at the top left, and you drag the window by its top area.
+
 **macOS first launch.** The app is not signed by Apple, so macOS may say it cannot be verified or offer to move it to the Trash. Right-click `HinaTracer.app` → **Open** (or **System Settings → Privacy & Security → Open Anyway**), or run once:
 
 ```bash

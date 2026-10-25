@@ -19,8 +19,9 @@ const glassUI = true
 
 var glassPingChart func(c *ui.Context) // screenshot tests only
 
-// glassChrome: the page draws the title bar (Windows only; macOS and Linux
-// keep their native title bars with the glass content).
+// glassChrome: the page draws the window buttons (Windows only). macOS
+// hides its title bar but keeps the native traffic lights (inset, top
+// left); Linux keeps its native title bar.
 func glassChrome() bool { return runtime.GOOS == "windows" }
 
 // glassWindowOptions adds the glass chrome to o.
@@ -31,9 +32,37 @@ func glassWindowOptions(o mygo.WindowOptions) mygo.WindowOptions {
 		o.TitleBarStyle = mygo.TitleBarHidden
 		o.HideWindowButtons = true
 	case "darwin":
+		// Hidden title bar, native traffic lights inset at the top left
+		// (the buttons stay shown: they are the only window buttons).
 		o.Vibrancy = mygo.VibrancyUnderWindow
+		o.TitleBarStyle = mygo.TitleBarHiddenInset
+		o.TitleBarHeight = glassMacTitleBarH
 	}
 	return o
+}
+
+// glassMacTitleBarH is the strip the inset traffic lights sit in (macOS).
+const glassMacTitleBarH = 52
+
+// glassLightsPad is the left padding that keeps a popup's title row clear
+// of the traffic lights (macOS); 0 elsewhere.
+func glassLightsPad(c *ui.Context) float32 {
+	l, _ := glassLights(c)
+	if l <= 0 {
+		return 0
+	}
+	return max(0, l-12) // the pane already insets its content ~12px
+}
+
+// glassLights returns the room of window controls drawn at the top LEFT
+// (macOS traffic lights); zero on Windows and Linux, whose controls are on
+// the right, and in full screen.
+func glassLights(c *ui.Context) (left, height float32) {
+	b := c.TitleBar()
+	if b.Left <= 0 {
+		return 0, 0
+	}
+	return b.Left, b.Height
 }
 
 // glassGround paints the window gradient; over a live material it is
@@ -218,7 +247,15 @@ func (a *app) viewGlass(c *ui.Context) {
 func (a *app) viewGlassSidebar(c *ui.Context) {
 	t := c.Theme()
 	sel := glassSelBG(t)
-	ui.Column(c).Width(200).Padding(16, 8, 12, 12).Gap(2).Shrink(0).DragWindow().Children(func() {
+	_, lightsH := glassLights(c)
+	top := float32(16)
+	if lightsH > 0 {
+		top = 0
+	}
+	ui.Column(c).Width(200).Padding(top, 8, 12, 12).Gap(2).Shrink(0).DragWindow().Children(func() {
+		if lightsH > 0 { // macOS: keep the traffic lights clear of the title
+			ui.Box(c).Height(lightsH).Shrink(0).DragWindow()
+		}
 		ui.Column(c).Gap(2).Padding(8, 12, 16, 12).Children(func() {
 			ui.Text(c, "HinaTracer").FontSize(16).Bold()
 			ui.Text(c, i18n.T("app.subtitle")).FontSize(11).TextColor(t.TextMuted)

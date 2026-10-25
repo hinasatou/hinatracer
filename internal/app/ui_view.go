@@ -1086,7 +1086,7 @@ func (a *app) viewPingDetail(c *ui.Context) {
 		// The whole title pane moves the window (as the main window's
 		// title bar does); its buttons stay clickable.
 		glassPaneEl(c).Gap(10).DragWindow().Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+			ui.Row(c).Padding(0, 0, 0, glassLightsPad(c)).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
 				ui.Text(c, title).FontSize(16).Bold()
 				ui.Spacer(c)
 				glassWindowButtons(c, winOrNil(a.detailWin))

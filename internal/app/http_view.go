@@ -831,7 +831,7 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 
 	body := func() {
 		if !ok {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).DragWindow().Children(func() {
+			ui.Row(c).Padding(0, 0, 0, glassLightsPad(c)).Gap(8).AlignItems(ui.Center).MinWidth(0).DragWindow().Children(func() {
 				ui.Text(c, i18n.T("http.detail.gone")).TextColor(t.TextMuted)
 				ui.Spacer(c)
 				glassWindowButtons(c, winOrNil(h.win))
@@ -843,7 +843,7 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 		// main window's title bar does; the buttons and the selectable
 		// URL keep their own handling.
 		ui.Column(c).Gap(12).MinWidth(0).AlignSelf(ui.Stretch).DragWindow().Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+			ui.Row(c).Padding(0, 0, 0, glassLightsPad(c)).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
 				ui.Text(c, httpLabel(r)).FontSize(17).Bold().SingleLine()
 				a.httpStatusCell(c, r)
 				ui.Spacer(c)
