@@ -36,25 +36,35 @@ func glassWindowOptions(o mygo.WindowOptions) mygo.WindowOptions {
 		// (the buttons stay shown: they are the only window buttons).
 		o.Vibrancy = mygo.VibrancyUnderWindow
 		o.TitleBarStyle = mygo.TitleBarHiddenInset
-		o.TitleBarHeight = glassMacTitleBarH
+		// Pin the close button 18pt from the top-left corner. mygo then
+		// lays the lights out with as much room below them as above, and
+		// c.TitleBar().Height becomes buttonHeight + 2*18 (≈52): the band
+		// the lights are centred in, so a row of that height with
+		// AlignItems(Center) lines its text up with them. (TitleBarHeight
+		// is Linux/Windows-only and does not move the lights.)
+		o.TrafficLightPosition = &mygo.Point{X: glassMacLightInset, Y: glassMacLightInset}
 	}
 	return o
 }
 
-// glassMacTitleBarH is the strip the inset traffic lights sit in (macOS).
-const glassMacTitleBarH = 52
+// glassMacLightInset is how far the close button's top-left corner sits
+// from the window's top-left corner (macOS).
+const glassMacLightInset = 18
+
+// glassMacTitleGap is the gap between the zoom button and title text.
+const glassMacTitleGap = 12
 
 // glassMacHeader draws a popup's title on the traffic lights' row
 // (macOS): the row is as tall as the title bar, so the title centres on the
-// lights, and starts a fixed 8px past them (bar.Left, inside the root's 8px
-// padding). It reports false, drawing nothing, on Windows and Linux.
+// lights, and starts glassMacTitleGap past the zoom button (bar.Left is
+// its right edge; the root already pads 8px). It reports false, drawing nothing, on Windows and Linux.
 func glassMacHeader(c *ui.Context, title string, extra func()) bool {
 	left, h := glassLights(c)
 	if left <= 0 {
 		return false
 	}
 	ui.Row(c).Height(h).Shrink(0).MinWidth(0).AlignItems(ui.Center).Gap(8).
-		Padding(0, 8, 0, left).DragWindow().Children(func() {
+		Padding(0, 8, 0, left+glassMacTitleGap-8).DragWindow().Children(func() {
 		ui.Text(c, title).FontSize(14).Bold().SingleLine().MinWidth(0)
 		if extra != nil {
 			extra()
@@ -274,9 +284,9 @@ func (a *app) viewGlassSidebar(c *ui.Context) {
 	ui.Column(c).Width(200).Padding(top, 8, 12, 12).Gap(2).Shrink(0).DragWindow().Children(func() {
 		if lightsH > 0 {
 			// macOS: the app name shares the traffic lights' row, centred on
-			// them and 8px past them; the nav follows right below.
+			// them and glassMacTitleGap past them (the sidebar pads 12px); the nav follows right below.
 			ui.Row(c).Height(lightsH).Shrink(0).AlignItems(ui.Center).
-				Padding(0, 0, 0, max(0, lightsL-4)).Margin(0, 0, 6, 0).DragWindow().Children(func() {
+				Padding(0, 0, 0, max(0, lightsL+glassMacTitleGap-12)).Margin(0, 0, 6, 0).DragWindow().Children(func() {
 				ui.Text(c, "HinaTracer").FontSize(14).Bold().SingleLine()
 			})
 		} else {

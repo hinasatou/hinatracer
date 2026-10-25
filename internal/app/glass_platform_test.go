@@ -29,6 +29,12 @@ func TestGlassPlatformSplit(t *testing.T) {
 			t.Errorf("windows options lost %q", w)
 		}
 	}
+	if !strings.Contains(mac[1], "TrafficLightPosition = &mygo.Point{") {
+		t.Error("darwin must pin the traffic lights (TrafficLightPosition) so TitleBar().Height centres them")
+	}
+	if strings.Contains(win[1], "TrafficLightPosition") {
+		t.Error("TrafficLightPosition is macOS-only")
+	}
 	if !strings.Contains(mac[1], "mygo.TitleBarHiddenInset") || !strings.Contains(mac[1], "VibrancyUnderWindow") {
 		t.Error("darwin options must use TitleBarHiddenInset + VibrancyUnderWindow")
 	}
