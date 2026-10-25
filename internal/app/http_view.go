@@ -829,9 +829,10 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 	t = c.Theme()
 	glassGround(c, dark)
 
+	mac := false
 	body := func() {
 		if !ok {
-			ui.Row(c).Padding(0, 0, 0, glassLightsPad(c)).Gap(8).AlignItems(ui.Center).MinWidth(0).DragWindow().Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).DragWindow().Children(func() {
 				ui.Text(c, i18n.T("http.detail.gone")).TextColor(t.TextMuted)
 				ui.Spacer(c)
 				glassWindowButtons(c, winOrNil(h.win))
@@ -843,12 +844,14 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 		// main window's title bar does; the buttons and the selectable
 		// URL keep their own handling.
 		ui.Column(c).Gap(12).MinWidth(0).AlignSelf(ui.Stretch).DragWindow().Children(func() {
-			ui.Row(c).Padding(0, 0, 0, glassLightsPad(c)).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
-				ui.Text(c, httpLabel(r)).FontSize(17).Bold().SingleLine()
-				a.httpStatusCell(c, r)
-				ui.Spacer(c)
-				glassWindowButtons(c, winOrNil(h.win))
-			})
+			if !mac {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+					ui.Text(c, httpLabel(r)).FontSize(17).Bold().SingleLine()
+					a.httpStatusCell(c, r)
+					ui.Spacer(c)
+					glassWindowButtons(c, winOrNil(h.win))
+				})
+			}
 			ui.Text(c, r.Spec.URL).FontSize(12).TextColor(t.TextMuted).Selectable().SingleLine()
 		})
 		ui.Divider(c)
@@ -959,9 +962,13 @@ func (a *app) viewHTTPDetail(c *ui.Context) {
 		ui.Box(c).Height(0).Shrink(0).Draw(func(_ *ui.Painter, r ui.Rect) { h.fit.need = r.Y + 16 + 1 + 8 })
 	}
 	h.fit.apply(winOrNil(h.win), detailMinW())
-	col := ui.Column(c).Fill().Padding(8).MinWidth(0)
+	col := glassRootPad(c, ui.Column(c).Fill().MinWidth(0))
 	col.Draw(func(_ *ui.Painter, r ui.Rect) { h.fit.have = r.H })
 	col.Children(func() {
+		// macOS: the title (and status) sit on the traffic lights' row.
+		if ok {
+			mac = glassMacHeader(c, httpLabel(r), func() { a.httpStatusCell(c, r) })
+		}
 		glassPaneEl(c).Grow(1).MinHeight(0).Children(body)
 	})
 }

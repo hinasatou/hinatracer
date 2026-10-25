@@ -44,14 +44,33 @@ func glassWindowOptions(o mygo.WindowOptions) mygo.WindowOptions {
 // glassMacTitleBarH is the strip the inset traffic lights sit in (macOS).
 const glassMacTitleBarH = 52
 
-// glassLightsPad is the left padding that keeps a popup's title row clear
-// of the traffic lights (macOS); 0 elsewhere.
-func glassLightsPad(c *ui.Context) float32 {
-	l, _ := glassLights(c)
-	if l <= 0 {
-		return 0
+// glassMacHeader draws a popup's title on the traffic lights' row
+// (macOS): the row is as tall as the title bar, so the title centres on the
+// lights, and starts a fixed 8px past them (bar.Left, inside the root's 8px
+// padding). It reports false, drawing nothing, on Windows and Linux.
+func glassMacHeader(c *ui.Context, title string, extra func()) bool {
+	left, h := glassLights(c)
+	if left <= 0 {
+		return false
 	}
-	return max(0, l-12) // the pane already insets its content ~12px
+	ui.Row(c).Height(h).Shrink(0).MinWidth(0).AlignItems(ui.Center).Gap(8).
+		Padding(0, 8, 0, left).DragWindow().Children(func() {
+		ui.Text(c, title).FontSize(14).Bold().SingleLine().MinWidth(0)
+		if extra != nil {
+			extra()
+		}
+		ui.Spacer(c)
+	})
+	return true
+}
+
+// glassRootPad pads a popup's root: no top padding under a macOS header
+// row (the row is the top margin), 8px all round elsewhere.
+func glassRootPad(c *ui.Context, root ui.Element) ui.Element {
+	if l, _ := glassLights(c); l > 0 {
+		return root.Padding(0, 8, 8, 8)
+	}
+	return root.Padding(8)
 }
 
 // glassLights returns the room of window controls drawn at the top LEFT
@@ -247,19 +266,25 @@ func (a *app) viewGlass(c *ui.Context) {
 func (a *app) viewGlassSidebar(c *ui.Context) {
 	t := c.Theme()
 	sel := glassSelBG(t)
-	_, lightsH := glassLights(c)
+	lightsL, lightsH := glassLights(c)
 	top := float32(16)
 	if lightsH > 0 {
 		top = 0
 	}
 	ui.Column(c).Width(200).Padding(top, 8, 12, 12).Gap(2).Shrink(0).DragWindow().Children(func() {
-		if lightsH > 0 { // macOS: keep the traffic lights clear of the title
-			ui.Box(c).Height(lightsH).Shrink(0).DragWindow()
+		if lightsH > 0 {
+			// macOS: the app name shares the traffic lights' row, centred on
+			// them and 8px past them; the nav follows right below.
+			ui.Row(c).Height(lightsH).Shrink(0).AlignItems(ui.Center).
+				Padding(0, 0, 0, max(0, lightsL-4)).Margin(0, 0, 6, 0).DragWindow().Children(func() {
+				ui.Text(c, "HinaTracer").FontSize(14).Bold().SingleLine()
+			})
+		} else {
+			ui.Column(c).Gap(2).Padding(8, 12, 16, 12).Children(func() {
+				ui.Text(c, "HinaTracer").FontSize(16).Bold()
+				ui.Text(c, i18n.T("app.subtitle")).FontSize(11).TextColor(t.TextMuted)
+			})
 		}
-		ui.Column(c).Gap(2).Padding(8, 12, 16, 12).Children(func() {
-			ui.Text(c, "HinaTracer").FontSize(16).Bold()
-			ui.Text(c, i18n.T("app.subtitle")).FontSize(11).TextColor(t.TextMuted)
-		})
 		for _, it := range []struct{ id, key string }{
 			{"ping", "nav.ping"}, {"http", "nav.http"}, {"trace", "nav.trace"},
 			{"iplookup", "nav.iplookup"}, {"webui", "nav.webui"},

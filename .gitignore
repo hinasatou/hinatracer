@@ -18,4 +18,10 @@ desktop.ini
 .vscode/
 .idea/
 
+# local build outputs: always build into build/, never the repo root
 /hinatracer
+hinatracer-linux-*
+hinatracer-darwin-*
+hinatracer-windows-*
+hinatracer-debug
+hinatracer-debug-*

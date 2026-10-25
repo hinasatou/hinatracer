@@ -184,18 +184,21 @@ func (a *app) viewTrend(c *ui.Context, tw *trendWin) {
 	dark := t.Dark
 	c.SetTheme(glassTheme(dark))
 	glassGround(c, dark)
-	root = ui.Column(c).Fill().Padding(8).Gap(8).MinWidth(0)
+	root = glassRootPad(c, ui.Column(c).Fill().Gap(8).MinWidth(0))
 	chartPane = func(body func()) { glassPaneEl(c).Gap(10).Grow(1).MinHeight(glassTrendChartPaneMinH).Children(body) }
 
 	root.Children(func() {
 		a.kickTrend(tw, false)
+		mac := glassMacHeader(c, tw.title, nil) // macOS: title on the lights' row
 		head := func() {
-			ui.Row(c).Padding(0, 0, 0, glassLightsPad(c)).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
-				ui.Text(c, tw.title).FontSize(17).Bold().SingleLine().MinWidth(0)
-				ui.Spacer(c)
-				gw, _ := tw.win.(glassWin)
-				glassWindowButtons(c, gw)
-			})
+			if !mac {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+					ui.Text(c, tw.title).FontSize(17).Bold().SingleLine().MinWidth(0)
+					ui.Spacer(c)
+					gw, _ := tw.win.(glassWin)
+					glassWindowButtons(c, gw)
+				})
+			}
 			a.viewRangeBar(c, &tw.rf, tw.ref.filterKind(), 0, nil)
 		}
 		glassPaneEl(c).Gap(10).Shrink(0).DragWindow().Children(head) // the title pane moves the window

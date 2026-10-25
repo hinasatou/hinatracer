@@ -1070,7 +1070,7 @@ func (a *app) viewPingDetail(c *ui.Context) {
 	t = c.Theme()
 	glassGround(c, dark)
 	a.detailFit.apply(winOrNil(a.detailWin), detailMinW())
-	root = ui.Column(c).Fill().Padding(8).Gap(8)
+	root = glassRootPad(c, ui.Column(c).Fill().Gap(8))
 	root.Draw(func(_ *ui.Painter, r ui.Rect) { a.detailFit.have = r.H })
 	pane = func(grow bool, body func()) {
 		el := glassPaneEl(c).Gap(10)
@@ -1083,14 +1083,18 @@ func (a *app) viewPingDetail(c *ui.Context) {
 	}
 
 	root.Children(func() {
+		// macOS: the title sits on the traffic lights' row.
+		mac := glassMacHeader(c, title, nil)
 		// The whole title pane moves the window (as the main window's
 		// title bar does); its buttons stay clickable.
 		glassPaneEl(c).Gap(10).DragWindow().Children(func() {
-			ui.Row(c).Padding(0, 0, 0, glassLightsPad(c)).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
-				ui.Text(c, title).FontSize(16).Bold()
-				ui.Spacer(c)
-				glassWindowButtons(c, winOrNil(a.detailWin))
-			})
+			if !mac {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+					ui.Text(c, title).FontSize(16).Bold()
+					ui.Spacer(c)
+					glassWindowButtons(c, winOrNil(a.detailWin))
+				})
+			}
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, s.Host).FontSize(13).TextColor(t.TextMuted).Grow(1)
 				if detailShowDisabledBadge(a.detailIsHop, s.Enabled) {

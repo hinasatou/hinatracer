@@ -5,7 +5,7 @@ package version
 
 const (
 	// Version is the app version. It must never contain the digit 4.
-	Version = "1.3.2"
+	Version = "1.3.3"
 	// RepoURL is the project home page.
 	RepoURL = "https://github.com/hinasatou/hinatracer"
 )
