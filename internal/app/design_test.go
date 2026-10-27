@@ -98,9 +98,17 @@ func TestDesignShots(t *testing.T) {
 	}
 }
 
-// chartTester draws paintRangeChart of pts in a 760×200 window.
+// chartTester draws paintRangeChart of pts in a 760×200 window. "Now" is
+// pinned just after the last point: makeRangeChart uses time.Now(), so
+// two renders straddling a wall-clock second got different x-axis labels
+// (flaky pixel compare, much more likely under -race's slowdown).
 func chartTester(pts []history.Point, r history.Range, draws *int) *ui.Tester {
-	m := makeRangeChart(pts, r)
+	now := time.Date(2026, 10, 19, 9, 0, 0, 0, time.Local)
+	if len(pts) > 0 {
+		now = pts[len(pts)-1].At.Add(time.Second)
+	}
+	v := chartView{Span: math.MaxInt64 / 4}
+	m := makeRangeChartView(pts, r, time.Time{}, time.Time{}, now, &v)
 	return ui.NewTester(func(c *ui.Context) {
 		t := c.Theme()
 		ui.Column(c).Fill().Background(t.Surface).Draw(func(p *ui.Painter, rc ui.Rect) {
