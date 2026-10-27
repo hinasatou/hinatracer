@@ -76,8 +76,14 @@ jobs:
           if (Test-Path $zip) { Remove-Item -Force $zip }
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
           Remove-Item -Recurse -Force $stage
-          $setup = Get-ChildItem -Path build\windows-amd64 -Filter 'HinaTracer Setup *.exe' | Select-Object -First 1
-          if (-not $setup) { throw "missing NSIS installer 'HinaTracer Setup <ver>.exe' from mygo build" }
+          # mygo >= 0.7: hinatracer-setup-<ver>-amd64.exe; older: "HinaTracer Setup <ver>.exe"
+          $setup = $null
+          foreach ($pat in @("hinatracer-setup-$env:VERSION-amd64.exe", 'hinatracer-setup-*.exe', 'HinaTracer Setup *.exe')) {
+            $setup = Get-ChildItem -Path build\windows-amd64 -Filter $pat -File | Select-Object -First 1
+            if ($setup) { break }
+          }
+          if (-not $setup) { throw "missing NSIS installer (hinatracer-setup-<ver>-amd64.exe or 'HinaTracer Setup <ver>.exe') from mygo build" }
+          Write-Host "Using installer: $($setup.Name)"
           Copy-Item $setup.FullName (Join-Path (Resolve-Path dist) "HinaTracer-v$env:VERSION-windows-amd64-setup.exe")
           Get-ChildItem dist
 
