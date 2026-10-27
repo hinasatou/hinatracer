@@ -220,6 +220,21 @@ func (s *Session) run(ctx context.Context, host string, opt SessionOptions) {
 		return
 	}
 
+	// MTR rounds run at a fixed rate, start-to-start (like the ping
+	// monitor and Debian's mtr): every interval a new round of TTL probes
+	// is launched without waiting for the previous one. Probes to the same
+	// hop may overlap across rounds (icmpx gives each echo a unique id/seq),
+	// and each probe records its own result (reply or its own timeout), so
+	// slow or silent hops no longer stretch the period. Timeouts are not
+	// capped to the interval.
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	interval := opt.Interval
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
 			return
@@ -230,19 +245,20 @@ func (s *Session) run(ctx context.Context, host string, opt SessionOptions) {
 			n = 1
 		}
 		destCopy := s.dest
-		interval := opt.Interval
 		s.mu.Unlock()
 		if destCopy == nil {
 			return
 		}
-		var wg sync.WaitGroup
+		var round sync.WaitGroup
 		for ttl := 1; ttl <= n; ttl++ {
 			if ctx.Err() != nil {
 				break
 			}
 			wg.Add(1)
+			round.Add(1)
 			go func(ttl int) {
 				defer wg.Done()
+				defer round.Done()
 				defer func() {
 					if rec := crashlog.Logged("trace.session.mtr", recover()); rec != nil {
 						s.mu.Lock()
@@ -255,16 +271,24 @@ func (s *Session) run(ctx context.Context, host string, opt SessionOptions) {
 				s.probeTTL(ctx, destCopy, ttl, opt.Timeout)
 			}(ttl)
 		}
-		wg.Wait()
-		s.fireUpdate()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { crashlog.Logged("trace.session.mtr.update", recover()) }()
+			round.Wait()
+			s.fireUpdate()
+		}()
 
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(interval):
+		case <-ticker.C:
 		}
 	}
 }
+
+// pingFn sends one probe; tests replace it to avoid the network.
+var pingFn = icmpx.Ping
 
 func (s *Session) hopAt(ttl int) *hopState {
 	if ttl <= 0 || ttl > len(s.hops) {
@@ -292,7 +316,7 @@ func (s *Session) probeTTL(ctx context.Context, dest net.IP, ttl int, timeout ti
 	}
 	// icmpx.Ping recovers its own panics into Result.Err; do not recover here
 	// while s.mu may be held below (would deadlock).
-	res := icmpx.Ping(dest.String(), ttl, timeout)
+	res := pingFn(dest.String(), ttl, timeout)
 	now := time.Now()
 
 	s.mu.Lock()

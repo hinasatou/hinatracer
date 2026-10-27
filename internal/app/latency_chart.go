@@ -91,7 +91,7 @@ func paintLatencyChart(p *ui.Painter, r ui.Rect, m latencyChartModel, t *ui.Them
 	for i := 0; i <= 2; i++ {
 		f := float32(i) / 2
 		y := plot.Y + plot.H - f*plot.H
-		p.Line(plot.X, y, plot.X+plot.W, y, 1, grid)
+		chartGridLine(p, plot.X, plot.X+plot.W, y, i == 0, grid)
 		p.Text(r.X+6, y-7, fmtAxisMs(m.YMax*float64(f)), 10, muted)
 	}
 	p.Text(plot.X, plot.Y+plot.H+3, i18n.Tf("chart.recent", len(m.Vals)), 10, muted)
@@ -156,4 +156,18 @@ func paintLatencyChart(p *ui.Painter, r ui.Rect, m latencyChartModel, t *ui.Them
 			p.Fill(ui.Rect{X: xAt(i) - 2, Y: yAt(v) - 2, W: 4, H: 4}, t.Accent, 2)
 		}
 	}
+}
+
+// chartGridLine draws a chart's horizontal reference line: the baseline
+// solid, the half and top lines dashed so they read as guides.
+func chartGridLine(p *ui.Painter, x0, x1, y float32, base bool, c ui.Color) {
+	if base {
+		p.Line(x0, y, x1, y, 1, c)
+		return
+	}
+	var l ui.Path
+	l.MoveTo(x0, y)
+	l.LineTo(x1, y)
+	l.Cap(ui.ButtCap).Dash(0, 4, 3)
+	p.StrokePath(&l, 1, c)
 }

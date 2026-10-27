@@ -460,7 +460,7 @@ func paintRangeChart(p *ui.Painter, r ui.Rect, m rangeChartModel, loading bool, 
 	for i := 0; i <= 2; i++ {
 		f := float32(i) / 2
 		y := plot.Y + plot.H - f*plot.H
-		p.Line(plot.X, y, plot.X+plot.W, y, 1, t.Border)
+		chartGridLine(p, plot.X, plot.X+plot.W, y, i == 0, t.Border)
 		p.Text(r.X+6, y-7, fmtAxisMs(m.YMax*float64(f)), 10, muted)
 	}
 	n := len(m.Pts)

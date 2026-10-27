@@ -288,8 +288,6 @@ func (m *Manager) poke() {
 // repeats); a panic in a check counts as a failed check.
 func (m *Manager) loop(ctx context.Context) {
 	next := map[int]time.Time{}
-	busy := map[int]bool{}
-	done := make(chan int, 64)
 	tick := time.NewTimer(0)
 	defer tick.Stop()
 	var backoff crashlog.Backoff
@@ -297,14 +295,12 @@ func (m *Manager) loop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case id := <-done:
-			delete(busy, id)
 		case <-m.wake:
 		case <-tick.C:
 		}
 		soonest := time.Now().Add(time.Second)
 		rec := crashlog.Pass("httpmon.loop", func() {
-			soonest = m.schedule(ctx, next, busy, done)
+			soonest = m.schedule(ctx, next)
 		})
 		if !tick.Stop() {
 			select {
@@ -317,14 +313,18 @@ func (m *Manager) loop(ctx context.Context) {
 }
 
 // schedule starts the checks that are due and returns when the next one is.
-func (m *Manager) schedule(ctx context.Context, next map[int]time.Time, busy map[int]bool, done chan<- int) time.Time {
+// Checks run at a fixed rate, start-to-start: the next check of a target is
+// due at start+interval even if the previous one is still running, so
+// checks of the same target may overlap and a slow check never delays the
+// schedule. Each check records exactly one result when it finishes.
+func (m *Manager) schedule(ctx context.Context, next map[int]time.Time) time.Time {
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	check := m.check
 	soonest := now.Add(time.Second)
 	for _, t := range m.targets {
-		if !t.Enabled || busy[t.ID] {
+		if !t.Enabled {
 			continue
 		}
 		at, ok := next[t.ID]
@@ -334,17 +334,9 @@ func (m *Manager) schedule(ctx context.Context, next map[int]time.Time, busy map
 			}
 			continue
 		}
-		busy[t.ID] = true
 		next[t.ID] = now.Add(time.Duration(t.Spec.Interval * float64(time.Second)))
 		id, spec := t.ID, t.Spec
 		go func() {
-			// Always hand the target back, so it is checked again.
-			defer func() {
-				select {
-				case done <- id:
-				case <-ctx.Done():
-				}
-			}()
 			defer func() {
 				if rec := crashlog.Logged("httpmon.check", recover()); rec != nil {
 					failed := Result{At: time.Now(), Err: fmt.Sprintf("internal error: %v", rec), CertDays: -1}

@@ -254,26 +254,53 @@ func (m *Manager) Running() bool {
 	return m.running
 }
 
-// loop pings every interval. A panic in a pass is written to the crash
-// log and the loop goes on (after a growing extra wait if it repeats).
+// loop starts a round every interval, start to start: a slow or
+// timing-out target must not stretch the period for the others (with a
+// 2 s timeout, waiting for the round before sleeping made 1 s pings come
+// every 3 s, 20 a minute). Like MTR, probes to the same target may overlap: every round sends a
+// fresh probe (own ICMP handle/socket and unique id/seq), and each one
+// records exactly one sample — latency or HistoryLost at its own timeout. A
+// panic in a round is written to the crash log and the loop goes on
+// (after a growing extra wait if it repeats).
 func (m *Manager) loop(ctx context.Context) {
 	var backoff crashlog.Backoff
+	var recMu sync.Mutex
+	var lastRec any
+	next := time.Now()
 	for {
-		d := time.Second
-		rec := crashlog.Pass("pinger.loop", func() {
-			m.pingAll()
-			m.mu.Lock()
-			d = m.interval
-			fn := m.onUpdate
-			m.mu.Unlock()
-			if fn != nil {
-				fn()
-			}
-		})
+		go func() {
+			defer crashlog.Recover("pinger.round")
+			rec := crashlog.Pass("pinger.loop", func() {
+				m.pingAll()
+				m.mu.Lock()
+				fn := m.onUpdate
+				m.mu.Unlock()
+				if fn != nil {
+					fn()
+				}
+			})
+			recMu.Lock()
+			lastRec = rec
+			recMu.Unlock()
+		}()
+		m.mu.Lock()
+		d := m.interval
+		m.mu.Unlock()
+		if d <= 0 {
+			d = time.Second
+		}
+		recMu.Lock()
+		rec := lastRec
+		lastRec = nil
+		recMu.Unlock()
+		next = next.Add(d + backoff.After(rec))
+		if now := time.Now(); next.Before(now) {
+			next = now
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(d + backoff.After(rec)):
+		case <-time.After(time.Until(next)):
 		}
 	}
 }
@@ -305,7 +332,7 @@ func (m *Manager) pingAll() {
 					}
 				}
 			}()
-			res := Probe(t.Host, timeout)
+			res := probeFn(t.Host, timeout)
 			now := time.Now()
 			m.mu.Lock()
 			defer m.mu.Unlock()
@@ -481,3 +508,6 @@ func (m *Manager) EditStats(id int, f func(*Stats)) bool {
 	}
 	return false
 }
+
+// probeFn is Probe; tests swap it to simulate slow targets.
+var probeFn = Probe
