@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/egoist/mygo/netproxy"
 )
 
 // DefaultReleasesURL is the GitHub Releases API for the project.
@@ -56,10 +58,12 @@ func (e *RateLimitError) Error() string {
 	return fmt.Sprintf("GitHub API rate limit (HTTP %d)", e.Status)
 }
 
-// NewHTTPClient returns a client with timeouts that honors proxy env vars.
+// NewHTTPClient returns a client with timeouts for the update check and
+// the update download. It follows the system proxy settings (netproxy);
+// HTTP_PROXY / HTTPS_PROXY / ALL_PROXY / NO_PROXY, when set, take precedence.
 func NewHTTPClient(timeout time.Duration) *http.Client {
 	tr := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 netproxy.Proxy,
 		DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   15 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,

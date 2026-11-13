@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/egoist/mygo/netproxy"
+
 	"hinatracer/internal/asn"
 	"hinatracer/internal/crashlog"
 	"hinatracer/internal/geoip"
@@ -90,13 +92,14 @@ type Manager struct {
 	onUpdate func()
 }
 
-// NewManager creates a download manager.
+// NewManager creates a download manager. Its client follows the system
+// proxy settings (netproxy); proxy env vars, when set, take precedence.
 func NewManager() *Manager {
 	return &Manager{
 		client: &http.Client{
 			Timeout: 0, // per-request via context
 			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
+				Proxy:                 netproxy.Proxy,
 				TLSHandshakeTimeout:   20 * time.Second,
 				ResponseHeaderTimeout: 60 * time.Second,
 				IdleConnTimeout:       90 * time.Second,

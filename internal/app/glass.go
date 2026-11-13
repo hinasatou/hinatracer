@@ -153,6 +153,9 @@ func glassTheme(dark bool) *ui.Theme {
 		t.AccentPressed = ui.Hex(mixHex(v.Accent, "#000000", 0.16))
 	}
 	t.AccentText = glassOnAccent(v)
+	// mygo 0.8+ fades the accent to gray in inactive windows unless
+	// InactiveAccent equals Accent; keep the accent as before.
+	t.InactiveAccent = t.Accent
 	t.Success = ui.Hex(v.Success)
 	t.Danger = ui.Hex(v.Loss)
 	t.Warning = ui.Hex(v.Warn)
